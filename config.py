@@ -9,7 +9,7 @@ def create_default_mnist_config():
     data.image_size = 32
     data.num_channels = 1
     data.centered = True
-    data.batch_size = 64
+    data.batch_size = 512
     data.norm_mean = (0.5)
     data.norm_std = (0.5)
 
@@ -29,9 +29,9 @@ def create_default_mnist_config():
 
     optim = config.optim = ml_collections.ConfigDict()
     optim.grad_clip_norm = 1.0
-    optim.linear_warmup = 4000
-    optim.lr = 2e-4
-    optim.min_lr = 2e-4
+    optim.linear_warmup = 400
+    optim.lr = 4e-4
+    optim.min_lr = 4e-4
     optim.warmup_lr = 0
     optim.weight_decay = 0
     optim.betas = (0.9, 0.999)
@@ -42,7 +42,7 @@ def create_default_mnist_config():
     training.training_iters = 50_000
     training.checkpoint_freq = 5_000
     training.eval_freq = 2500
-    training.snapshot_freq = 1000
+    training.snapshot_freq = 100
     training.snapshot_batch_size = 100
     training.batch_size = 64
     training.ode_sampling = False

@@ -3,11 +3,11 @@ import torchvision
 import wandb
 import os
 import math
-
 import numpy as np
+from torch_ema import ExponentialMovingAverage
 
 from models.ddpm import DDPM
-from models.ema import ExponentialMovingAverage
+
 from sde import DDPM_SDE, EulerDiffEqSolver
 from data_generator import DataGenerator
 
@@ -45,7 +45,7 @@ class DiffusionRunner:
 
         self.checkpoints_folder = config.training.checkpoints_folder
         if eval:
-            self.ema = ExponentialMovingAverage(self.model.parameters(), config.model.ema_rate)
+            self.ema = ExponentialMovingAverage(self.model.parameters(), decay=config.model.ema_rate)
             self.restore_parameters(device)
             self.switch_to_ema()
 
@@ -63,17 +63,6 @@ class DiffusionRunner:
 
         ema_ckpt = torch.load(checkpoints_folder + self.config.chkp_name, map_location=device)['ema']
         self.ema.load_state_dict(ema_ckpt)
-
-    def switch_to_ema(self) -> None:
-        ema = self.ema
-        score_model = self.model
-        ema.store(score_model.parameters())
-        ema.copy_to(score_model.parameters())
-
-    def switch_back_from_ema(self) -> None:
-        ema = self.ema
-        score_model = self.model
-        ema.restore(score_model.parameters())
 
     def set_optimizer(self) -> None:
         self.optimizer = torch.optim.Adam(
@@ -181,7 +170,7 @@ class DiffusionRunner:
 
         wandb.init(project='sde', name=self.config.training.exp_name)
 
-        self.ema = ExponentialMovingAverage(self.model.parameters(), self.config.model.ema_rate)
+        self.ema = ExponentialMovingAverage(self.model.parameters(), decay=self.config.model.ema_rate)
         self.model.train()
         for iter_idx in trange(1, 1 + self.config.training.training_iters):
             self.step = iter_idx
@@ -207,17 +196,16 @@ class DiffusionRunner:
 
         self.model.eval()
         self.save_checkpoint()
-        self.switch_to_ema()
 
+    @torch.no_grad()
     def validate(self) -> None:
         prev_mode = self.model.training
-
-        self.model.eval()
-        self.switch_to_ema()
-
         valid_loss = 0
         valid_count = 0
-        with torch.no_grad():
+
+        self.model.eval()
+
+        with self.ema.average_parameters():
             for (X, y) in self.datagen.valid_loader:
                 X = X.to(self.device)
                 loss = self.calc_loss(clean_x=X)
@@ -227,7 +215,6 @@ class DiffusionRunner:
         valid_loss = valid_loss / valid_count
         self.log_metric('loss', 'valid_loader', valid_loss)
 
-        self.switch_back_from_ema()
         self.model.train(prev_mode)
 
     def save_checkpoint(self) -> None:
@@ -273,24 +260,23 @@ class DiffusionRunner:
 
     def snapshot(self, labels: Optional[torch.Tensor] = None) -> None:
         prev_mode = self.model.training
-
         self.model.eval()
-        self.switch_to_ema()
 
-        images = self.sample_images(self.config.training.snapshot_batch_size, labels=labels).cpu()
+        with self.ema.average_parameters():
+            images = self.sample_images(self.config.training.snapshot_batch_size, labels=labels).cpu()
+
         nrow = int(math.sqrt(self.config.training.snapshot_batch_size))
         grid = torchvision.utils.make_grid(images, nrow=nrow).permute(1, 2, 0)
         grid = grid.data.numpy().astype(np.uint8)
         self.log_metric('images', 'from_noise', wandb.Image(grid))
 
-        self.switch_back_from_ema()
         self.model.train(prev_mode)
 
     def inference(self, batch_size, labels=None) -> torch.Tensor:
         self.model.eval()
-        self.switch_to_ema()
 
-        images = self.sample_images(batch_size, labels=labels).cpu()
+        with self.ema.average_parameters():
+            images = self.sample_images(batch_size, labels=labels).cpu()
         images = images.type(torch.uint8)
-        self.switch_back_from_ema()
+
         return images
