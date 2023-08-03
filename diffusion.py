@@ -8,10 +8,9 @@ from torch_ema import ExponentialMovingAverage
 
 from models.ddpm import DDPM
 
-from sde import DDPM_SDE, EulerDiffEqSolver
+from diffusion_utils.dynamic import DynamicSDE
+from diffusion_utils.solvers import EulerDiffEqSolver
 from data_generator import DataGenerator
-
-import torch.nn as nn
 
 from ml_collections import ConfigDict
 from typing import Optional, Union, Dict
@@ -35,9 +34,10 @@ class DiffusionRunner:
         self.device = device
 
         self.model = DDPM(config=config)
-        self.sde = DDPM_SDE(config=config)
+        self.dynamic = DynamicSDE(config=config)
+
         self.diff_eq_solver = EulerDiffEqSolver(
-            self.sde,
+            self.dynamic,
             self.calc_score,
             ode_sampling=config.training.ode_sampling
         )
@@ -47,10 +47,9 @@ class DiffusionRunner:
         if eval:
             self.ema = ExponentialMovingAverage(self.model.parameters(), decay=config.model.ema_rate)
             self.restore_parameters(device)
-            self.switch_to_ema()
 
         self.model.to(device)
-        self.model = DataParallel(self.model)
+        self.model_ddp = DataParallel(self.model)
 
     def restore_parameters(self, device: Optional[torch.device] = None) -> None:
         checkpoints_folder: str = self.checkpoints_folder
@@ -109,7 +108,7 @@ class DiffusionRunner:
         return grad_norm
 
     def sample_time(self, batch_size: int, eps: float = 1e-5):
-        return torch.cuda.FloatTensor(batch_size).uniform_() * (self.sde.T - eps) + eps
+        return torch.cuda.FloatTensor(batch_size).uniform_() * (self.dynamic.T - eps) + eps
 
     def calc_score(self, input_x: torch.Tensor, input_t: torch.Tensor, y=None) -> Dict[str, torch.Tensor]:
         """
@@ -122,8 +121,8 @@ class DiffusionRunner:
             2) calculate std of input_x
             3) calculate score = -pred_noize / std
         """
-        eps = self.model(input_x, input_t)
-        std = self.sde.marginal_std(input_t)
+        eps = self.model_ddp(input_x, input_t)
+        _, std = self.dynamic.marginal_params(input_t)
         std = std.view(-1, 1, 1, 1)
         score = (-eps / std)
 
@@ -148,12 +147,9 @@ class DiffusionRunner:
             6) loss = mean(torch.pow(score + pred_score, 2))
         """
         t = self.sample_time(clean_x.shape[0], eps)
-        mean, std = self.sde.marginal_prob(clean_x, t)
-        noise = torch.randn_like(clean_x)
-        std = std.view(-1, 1, 1, 1)
-        pred = self.calc_score(mean + noise * std, t)
-        score = -noise / self.sde.marginal_std(t).view(-1, 1, 1, 1)
-        loss = torch.pow(pred['noise'] - noise, 2).mean()
+        marginal = self.dynamic.marginal(clean_x, t)
+        pred = self.calc_score(marginal["x_t"], t)
+        loss = torch.pow(pred['noise'] - marginal["noise"], 2).mean()
         return loss
 
     def set_data_generator(self) -> None:
@@ -171,7 +167,7 @@ class DiffusionRunner:
         wandb.init(project='sde', name=self.config.training.exp_name)
 
         self.ema = ExponentialMovingAverage(self.model.parameters(), decay=self.config.model.ema_rate)
-        self.model.train()
+        self.model_ddp.train()
         for iter_idx in trange(1, 1 + self.config.training.training_iters):
             self.step = iter_idx
 
@@ -194,16 +190,16 @@ class DiffusionRunner:
             if iter_idx % self.config.training.checkpoint_freq == 0:
                 self.save_checkpoint()
 
-        self.model.eval()
+        self.model_ddp.eval()
         self.save_checkpoint()
 
     @torch.no_grad()
     def validate(self) -> None:
-        prev_mode = self.model.training
+        prev_mode = self.model_ddp.training
         valid_loss = 0
         valid_count = 0
 
-        self.model.eval()
+        self.model_ddp.eval()
 
         with self.ema.average_parameters():
             for (X, y) in self.datagen.valid_loader:
@@ -215,7 +211,7 @@ class DiffusionRunner:
         valid_loss = valid_loss / valid_count
         self.log_metric('loss', 'valid_loader', valid_loss)
 
-        self.model.train(prev_mode)
+        self.model_ddp.train(prev_mode)
 
     def save_checkpoint(self) -> None:
         os.makedirs(self.checkpoints_folder, exist_ok=True)
@@ -252,7 +248,7 @@ class DiffusionRunner:
             Implement cycle for Euler RSDE sampling w.r.t labels  
             """
             noisy_x = torch.randn(shape, device=device)
-            times = torch.linspace(self.sde.T - eps, 0, self.sde.N, device=device) + eps
+            times = torch.linspace(self.dynamic.T - eps, 0, self.dynamic.N, device=device) + eps
             for time in times:
                 t = torch.ones(batch_size, device=device) * time
                 noisy_x, _ = self.diff_eq_solver.step(noisy_x, t, labels)
@@ -260,8 +256,8 @@ class DiffusionRunner:
         return self.inverse_scaler(noisy_x)
 
     def snapshot(self, labels: Optional[torch.Tensor] = None) -> None:
-        prev_mode = self.model.training
-        self.model.eval()
+        prev_mode = self.model_ddp.training
+        self.model_ddp.eval()
 
         with self.ema.average_parameters():
             images = self.sample_images(self.config.training.snapshot_batch_size, labels=labels).cpu()
@@ -271,10 +267,10 @@ class DiffusionRunner:
         grid = grid.data.numpy().astype(np.uint8)
         self.log_metric('images', 'from_noise', wandb.Image(grid))
 
-        self.model.train(prev_mode)
+        self.model_ddp.train(prev_mode)
 
     def inference(self, batch_size, labels=None) -> torch.Tensor:
-        self.model.eval()
+        self.model_ddp.eval()
 
         with self.ema.average_parameters():
             images = self.sample_images(batch_size, labels=labels).cpu()

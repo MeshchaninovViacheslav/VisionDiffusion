@@ -39,7 +39,7 @@ def create_default_mnist_config():
 
     # training
     training = config.training = ml_collections.ConfigDict()
-    training.training_iters = 50_000
+    training.training_iters = 15_000
     training.checkpoint_freq = 5_000
     training.eval_freq = 2500
     training.snapshot_freq = 1000
@@ -56,9 +56,10 @@ def create_default_mnist_config():
     sde.N = 1000
     sde.beta_min = 0.1
     sde.beta_max = 20
+    sde.scheduler = "cosine"
 
     config.checkpoints_prefix = 'ddpm'
     config.predict = 'noise'
     config.device = 'cuda'
-    config.chkp_name = 'ddpm_cont_reversed-50000.pth'
+    config.chkp_name = "ddpm-15000.pth"
     return config

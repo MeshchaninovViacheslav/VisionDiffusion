@@ -32,7 +32,7 @@ class DataGenerator:
             MNIST(root='./data', download=True, train=False, transform=self.mnist_transforms),
             batch_size=5 * config.training.batch_size,
             shuffle=False,
-            drop_last=True
+            drop_last=False
         )
 
     def sample_train(self):
@@ -44,31 +44,3 @@ class DataGenerator:
         while True:
             for batch in self.valid_loader:
                 yield batch
-
-
-class CustomDataGenerator(torch.utils.data.Dataset):
-
-    def __init__(self, config, path):
-        self.transform = Compose(
-            [
-                Resize((config.data.image_size, config.data.image_size)),
-                ToTensor(),
-                Normalize(mean=config.data.norm_mean, std=config.data.norm_std),
-                # to [-1; 1]
-            ]
-        )
-        self.path = path
-        self.all_images = os.listdir(self.path)
-
-    def __getitem__(self, idx):
-        image_path = self.path + '/' + self.all_images[idx]
-        img = Image.open(image_path)
-        target = int(image_path.split('class_')[1].split('.')[0])
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        return img, target
-
-    def __len__(self):
-        return len(self.all_images)
