@@ -234,6 +234,7 @@ class DiffusionRunner:
         )
         print(f"Save model to: {file_path}")
 
+    @torch.no_grad()
     def sample_images(
             self, batch_size: int,
             eps: float = 1e-5,

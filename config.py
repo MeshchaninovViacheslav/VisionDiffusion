@@ -9,7 +9,7 @@ def create_default_mnist_config():
     data.image_size = 32
     data.num_channels = 1
     data.centered = True
-    data.batch_size = 512
+    data.batch_size = 64
     data.norm_mean = (0.5)
     data.norm_std = (0.5)
 
@@ -29,9 +29,9 @@ def create_default_mnist_config():
 
     optim = config.optim = ml_collections.ConfigDict()
     optim.grad_clip_norm = 1.0
-    optim.linear_warmup = 400
-    optim.lr = 4e-4
-    optim.min_lr = 4e-4
+    optim.linear_warmup = 500
+    optim.lr = 2e-4
+    optim.min_lr = 2e-4
     optim.warmup_lr = 0
     optim.weight_decay = 0
     optim.betas = (0.9, 0.999)
@@ -42,15 +42,14 @@ def create_default_mnist_config():
     training.training_iters = 50_000
     training.checkpoint_freq = 5_000
     training.eval_freq = 2500
-    training.snapshot_freq = 100
+    training.snapshot_freq = 1000
     training.snapshot_batch_size = 100
     training.batch_size = 64
     training.ode_sampling = False
-    training.logging_freq = 10
-    training.p_uncond = 0.1
-    training.exp_name = 'ddpm_classifierfree'
+    training.logging_freq = 50
+    training.exp_name = 'ddpm'
 
-    training.checkpoints_folder = '../ddpm_checkpoints/'
+    training.checkpoints_folder = './ddpm_checkpoints/'
 
     # sde
     sde = config.sde = ml_collections.ConfigDict()
@@ -58,17 +57,7 @@ def create_default_mnist_config():
     sde.beta_min = 0.1
     sde.beta_max = 20
 
-    # 2 assignment - train noisy classifier
-    classifier = config.classifier = ml_collections.ConfigDict()
-    classifier.type = 'classifier_guidance'
-    classifier.gamma = 100
-    classifier.training_iters = 20_000
-    classifier.eval_freq = 5_000
-    classifier.snapshot_freq = 5_000
-    classifier.checkpoint_freq = 5_000
-    classifier.checkpoint_path = '../ddpm_checkpoints/classifier.pth'
-
-    config.checkpoints_prefix = 'ddpm_classifierfree'
+    config.checkpoints_prefix = 'ddpm'
     config.predict = 'noise'
     config.device = 'cuda'
     config.chkp_name = 'ddpm_cont_reversed-50000.pth'
