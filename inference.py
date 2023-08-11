@@ -10,7 +10,7 @@ from utils.utils import set_seed
 
 
 def inference_run(diffusion, num_images=10_000, batch_size=500):
-    save_path = f'mnist_generated_samples/images-sde-{num_images}-{diffusion.config.sde.N}'
+    save_path = f'mnist_generated_samples/images-ddm-{num_images}-{diffusion.config.sde.N}'
     os.makedirs(save_path, exist_ok=True)
 
     image_ind = 0
@@ -24,11 +24,12 @@ def inference_run(diffusion, num_images=10_000, batch_size=500):
     return save_path
 
 
-def main():
+def main(N=10):
     set_seed(0)
     config = create_default_mnist_config()
-    config.sde.N = 10
+    config.sde.N = N
     diffusion = DiffusionRunner(config, eval=True)
     save_path = inference_run(diffusion)
     compute_fid_mnist(save_path)
 
+# from inference import main; main()

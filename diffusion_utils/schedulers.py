@@ -4,7 +4,6 @@ from abc import ABCMeta, abstractmethod
 
 
 class Scheduler(metaclass=ABCMeta):
-    @abstractmethod
     def beta_t(self, t):
         pass
 
@@ -22,28 +21,29 @@ class CosineSDE(Scheduler):
         return self.beta_0 + (self.beta_1 - self.beta_0) * t
 
     def params(self, t):
-        t = t[:, None, None]
+        """
+
+        :param t:
+        :return: mu, std
+        """
         log_mean_coeff = -0.25 * t ** 2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
         log_gamma_coeff = log_mean_coeff * 2
-        alpha = torch.exp(log_mean_coeff)
+        mu = torch.exp(log_mean_coeff)
         std = torch.sqrt(1. - torch.exp(log_gamma_coeff))
-        return alpha, std
+        return mu, std
 
 
-class CosineSD(Scheduler):
-    def __init__(self, d=1):
-        self.d = d
-        self.t_thr = 0.95
+class DDM_Scheduler(Scheduler):
+    def __init__(self, config):
+        self.beta_0 = config.sde.beta_min
+        self.beta_1 = config.sde.beta_max
 
-    def beta_t(self, t):
-        t = torch.clip(t, 0, self.t_thr)
-        tan = torch.tan(np.pi * t / 2)
-        beta_t = np.pi * self.d ** 2 * tan * (1 + tan ** 2) / (1 + self.d ** 2 * tan ** 2)
-        return beta_t
+    def params(self, t):
+        """
 
-    def alpha_std(self, t):
-        t = t[:, None, None]
-        tan = torch.tan(np.pi * t / 2)
-        alpha_t = 1 / torch.sqrt(1 + tan ** 2 * self.d ** 2)
-        std_t = torch.sqrt(1 - alpha_t ** 2)
-        return torch.clip(alpha_t, 0, 1), torch.clip(std_t, 0, 1)
+        :param t:
+        :return: mu, std
+        """
+        mu = 1 - t
+        std = torch.sqrt(t)
+        return mu, std

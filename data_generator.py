@@ -26,13 +26,17 @@ class DataGenerator:
             MNIST(root='./data', download=True, train=True, transform=self.mnist_transforms),
             batch_size=config.training.batch_size,
             shuffle=True,
-            drop_last=True
+            drop_last=True,
+            pin_memory=True,
+            num_workers=10,
         )
         self.valid_loader = DataLoader(
             MNIST(root='./data', download=True, train=False, transform=self.mnist_transforms),
             batch_size=5 * config.training.batch_size,
             shuffle=False,
-            drop_last=False
+            drop_last=False,
+            pin_memory=True,
+            num_workers=10,
         )
 
     def sample_train(self):

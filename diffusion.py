@@ -5,11 +5,12 @@ import os
 import math
 import numpy as np
 from torch_ema import ExponentialMovingAverage
+from tqdm import tqdm
 
 from models.ddpm import DDPM
 
-from diffusion_utils.dynamic import DynamicSDE
-from diffusion_utils.solvers import EulerDiffEqSolver
+from diffusion_utils.dynamic import DynamicSDE, DynamicDDM
+from diffusion_utils.solvers import EulerDiffEqSolver, DDIMSolver, DDMSolver
 from data_generator import DataGenerator
 
 from ml_collections import ConfigDict
@@ -34,9 +35,9 @@ class DiffusionRunner:
         self.device = device
 
         self.model = DDPM(config=config)
-        self.dynamic = DynamicSDE(config=config)
+        self.dynamic = DynamicDDM(config=config)
 
-        self.diff_eq_solver = EulerDiffEqSolver(
+        self.diff_eq_solver = DDMSolver(
             self.dynamic,
             self.calc_score,
             ode_sampling=config.training.ode_sampling
@@ -121,14 +122,17 @@ class DiffusionRunner:
             2) calculate std of input_x
             3) calculate score = -pred_noize / std
         """
-        eps = self.model_ddp(input_x, input_t)
-        _, std = self.dynamic.marginal_params(input_t)
+        x_0 = self.model_ddp(input_x, input_t)
+        mu, std = self.dynamic.marginal_params(input_t)
         std = std.view(-1, 1, 1, 1)
-        score = (-eps / std)
 
+        eps = (input_x - mu * x_0) / std
+        score = (-eps / std)
+        # x_0 = (input_x - std * eps) / mu
         return {
             'score': score,
-            'noise': eps
+            'noise': eps,
+            "x_0": x_0,
         }
 
     def calc_loss(self, clean_x: torch.Tensor, eps: float = 1e-5) -> Union[float, torch.Tensor]:
@@ -149,7 +153,7 @@ class DiffusionRunner:
         t = self.sample_time(clean_x.shape[0], eps)
         marginal = self.dynamic.marginal(clean_x, t)
         pred = self.calc_score(marginal["x_t"], t)
-        loss = torch.pow(pred['noise'] - marginal["noise"], 2).mean()
+        loss = torch.pow(pred['x_0'] - marginal["x_0"], 2).mean()
         return loss
 
     def set_data_generator(self) -> None:
@@ -248,7 +252,7 @@ class DiffusionRunner:
             Implement cycle for Euler RSDE sampling w.r.t labels  
             """
             noisy_x = torch.randn(shape, device=device)
-            times = torch.linspace(self.dynamic.T - eps, 0, self.dynamic.N, device=device) + eps
+            times = torch.linspace(self.dynamic.T - eps, eps, self.dynamic.N, device=device)
             for time in times:
                 t = torch.ones(batch_size, device=device) * time
                 noisy_x, _ = self.diff_eq_solver.step(noisy_x, t, labels)

@@ -1,8 +1,18 @@
-import numpy as np
 import torch
+import numpy as np
+from torch import Tensor
+from typing import Tuple, Dict
+
+from abc import ABCMeta, abstractmethod
 
 
-class EulerDiffEqSolver:
+class Solver(metaclass=ABCMeta):
+    @abstractmethod
+    def step(self, x_t: Tensor, t: Tensor) -> Tuple[Tensor, Tensor]:
+        pass
+
+
+class EulerDiffEqSolver(Solver):
     def __init__(self, dynamic, score_fn, ode_sampling=False):
         self.dynamic = dynamic
         self.score_fn = score_fn
@@ -23,3 +33,66 @@ class EulerDiffEqSolver:
         x_mean = x_t + drift * dt
         x = x_mean + diffusion.view(-1, 1, 1, 1) * np.sqrt(-dt) * noise
         return x, x_mean
+
+
+class DDIMSolver:
+    def __init__(self, dynamic, score_fn, ode_sampling=False):
+        self.dynamic = dynamic
+        self.score_fn = score_fn
+        self.ode_sampling = ode_sampling
+
+    def q_x_t_reverse(self, x_t, x_0, t):
+        dt = 1 / self.dynamic.N
+
+        alpha_t = self.dynamic.marginal_params(t)[0] ** 2
+        alpha_t_1 = self.dynamic.marginal_params(t - dt)[0] ** 2
+
+        sigma_t = torch.zeros_like(alpha_t)
+
+        noise_t = (x_t - torch.sqrt(alpha_t) * x_0) / torch.sqrt(1 - alpha_t)
+        mu = torch.sqrt(alpha_t_1) * x_0 + \
+             torch.sqrt(1 - alpha_t_1 - sigma_t ** 2) * noise_t
+        std = sigma_t
+        return mu, std
+
+    def step(self, x_t, t, labels=None):
+        """
+        Implement reverse SDE/ODE Euler solver
+        """
+
+        """
+        x_mean = deterministic part
+        x = x_mean + noise (yet another noise sampling)
+        """
+        noise = torch.randn_like(x_t)
+        x_0 = self.score_fn(x_t, t)["x_0"]
+        mu, std = self.q_x_t_reverse(x_t, x_0, t)
+        x = mu + std * noise
+        return x, mu
+
+class DDMSolver:
+    def __init__(self, dynamic, score_fn, ode_sampling=False):
+        self.dynamic = dynamic
+        self.score_fn = score_fn
+        self.ode_sampling = ode_sampling
+
+    def step(self, x_t, t, labels=None):
+        """
+        Implement reverse SDE/ODE Euler solver
+        """
+
+        """
+        x_mean = deterministic part
+        x = x_mean + noise (yet another noise sampling)
+        """
+        dt = 1 / self.dynamic.N
+        noise = torch.randn_like(x_t)
+        x_0 = self.score_fn(x_t, t)["x_0"]
+
+        vec_t = t[:, None, None, None]
+        mu = (1 - dt / vec_t) * x_t + dt / vec_t * x_0
+        std = dt * (vec_t - dt) / vec_t
+
+        x = mu + std * noise
+        return x, mu
+
