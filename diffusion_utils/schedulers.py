@@ -31,19 +31,3 @@ class CosineSDE(Scheduler):
         mu = torch.exp(log_mean_coeff)
         std = torch.sqrt(1. - torch.exp(log_gamma_coeff))
         return mu, std
-
-
-class DDM_Scheduler(Scheduler):
-    def __init__(self, config):
-        self.beta_0 = config.sde.beta_min
-        self.beta_1 = config.sde.beta_max
-
-    def params(self, t):
-        """
-
-        :param t:
-        :return: mu, std
-        """
-        mu = 1 - t
-        std = torch.sqrt(t)
-        return mu, std

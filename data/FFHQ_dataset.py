@@ -1,5 +1,5 @@
 import torch
-from torchvision.datasets import MNIST
+from torchvision.datasets import FFHQ
 from torchvision.transforms import (
     Resize,
     Normalize,
@@ -11,7 +11,7 @@ import os
 from PIL import Image
 
 
-class DataGenerator:
+class FFHQDataGenerator:
     def __init__(self, config):
         self.config = config
         self.mnist_transforms = Compose(

@@ -5,13 +5,14 @@ import os
 import math
 import numpy as np
 from torch_ema import ExponentialMovingAverage
-from tqdm import tqdm
+import torch.distributed as dist
 
-from models.ddpm import DDPM
+from models.utils import create_model
 
-from diffusion_utils.dynamic import DynamicSDE, DynamicDDM
-from diffusion_utils.solvers import EulerDiffEqSolver, DDIMSolver, DDMSolver
-from data_generator import DataGenerator
+from diffusion_utils.dynamic import DynamicSDE
+from diffusion_utils.solvers import EulerDiffEqSolver
+from data.MNIST_dataset import MNISTDataGenerator
+from data.CIFAR_dataset import CIFARDataGenerator
 
 from ml_collections import ConfigDict
 from typing import Optional, Union, Dict
@@ -34,10 +35,10 @@ class DiffusionRunner:
         device = torch.device(self.config.device)
         self.device = device
 
-        self.model = DDPM(config=config)
-        self.dynamic = DynamicDDM(config=config)
+        self.model = create_model(config=config)
+        self.dynamic = DynamicSDE(config=config)
 
-        self.diff_eq_solver = DDMSolver(
+        self.diff_eq_solver = EulerDiffEqSolver(
             self.dynamic,
             self.calc_score,
             ode_sampling=config.training.ode_sampling
@@ -50,7 +51,14 @@ class DiffusionRunner:
             self.restore_parameters(device)
 
         self.model.to(device)
-        self.model_ddp = DataParallel(self.model)
+        if self.config.ddp:
+            self.model_ddp = torch.nn.parallel.DistributedDataParallel(
+                self.model,
+                device_ids=[config.local_rank],
+                broadcast_buffers=False,
+            )
+        else:
+            self.model_ddp = self.model
 
     def restore_parameters(self, device: Optional[torch.device] = None) -> None:
         checkpoints_folder: str = self.checkpoints_folder
@@ -122,13 +130,13 @@ class DiffusionRunner:
             2) calculate std of input_x
             3) calculate score = -pred_noize / std
         """
-        x_0 = self.model_ddp(input_x, input_t)
+        eps = self.model_ddp(input_x, input_t)
         mu, std = self.dynamic.marginal_params(input_t)
         std = std.view(-1, 1, 1, 1)
 
-        eps = (input_x - mu * x_0) / std
+        #eps = (input_x - mu * x_0) / std
         score = (-eps / std)
-        # x_0 = (input_x - std * eps) / mu
+        x_0 = (input_x - std * eps) / mu
         return {
             'score': score,
             'noise': eps,
@@ -153,14 +161,15 @@ class DiffusionRunner:
         t = self.sample_time(clean_x.shape[0], eps)
         marginal = self.dynamic.marginal(clean_x, t)
         pred = self.calc_score(marginal["x_t"], t)
-        loss = torch.pow(pred['x_0'] - marginal["x_0"], 2).mean()
+        loss = torch.pow(pred['noise'] - marginal["noise"], 2).mean()
         return loss
 
     def set_data_generator(self) -> None:
-        self.datagen = DataGenerator(self.config)
+        self.datagen = CIFARDataGenerator(self.config)
 
     def log_metric(self, metric_name: str, loader_name: str, value: Union[float, torch.Tensor, wandb.Image]):
-        wandb.log({f'{metric_name}/{loader_name}': value}, step=self.step)
+        if dist.get_rank() == 0:
+            wandb.log({f'{metric_name}/{loader_name}': value}, step=self.step)
 
     def train(self) -> None:
         self.set_optimizer()
@@ -168,7 +177,8 @@ class DiffusionRunner:
         train_generator = self.datagen.sample_train()
         self.step = 0
 
-        wandb.init(project='sde', name=self.config.training.exp_name)
+        if dist.get_rank() == 0:
+            wandb.init(project=self.config.project, name=self.config.training.exp_name)
 
         self.ema = ExponentialMovingAverage(self.model.parameters(), decay=self.config.model.ema_rate)
         self.model_ddp.train()
@@ -218,21 +228,22 @@ class DiffusionRunner:
         self.model_ddp.train(prev_mode)
 
     def save_checkpoint(self) -> None:
-        os.makedirs(self.checkpoints_folder, exist_ok=True)
-        prefix = f"{self.config.checkpoints_prefix}-{self.step}"
-        file_path = os.path.join(self.checkpoints_folder, prefix + ".pth")
-        torch.save(
-            {
-                "model": self.model.state_dict(),
-                "ema": self.ema.state_dict(),
-                "optimizer": self.optimizer.state_dict(),
-                "scheduler": self.scheduler.state_dict(),
-                "scaler": self.grad_scaler.state_dict(),
-                "step": self.step,
-            },
-            file_path
-        )
-        print(f"Save model to: {file_path}")
+        if dist.get_rank() == 0:
+            os.makedirs(self.checkpoints_folder, exist_ok=True)
+            prefix = f"{self.config.checkpoints_prefix}-{self.step}"
+            file_path = os.path.join(self.checkpoints_folder, prefix + ".pth")
+            torch.save(
+                {
+                    "model": self.model.state_dict(),
+                    "ema": self.ema.state_dict(),
+                    "optimizer": self.optimizer.state_dict(),
+                    "scheduler": self.scheduler.state_dict(),
+                    "scaler": self.grad_scaler.state_dict(),
+                    "step": self.step,
+                },
+                file_path
+            )
+            print(f"Save model to: {file_path}")
 
     @torch.no_grad()
     def sample_images(
@@ -252,7 +263,7 @@ class DiffusionRunner:
             Implement cycle for Euler RSDE sampling w.r.t labels  
             """
             noisy_x = torch.randn(shape, device=device)
-            times = torch.linspace(self.dynamic.T - eps, eps, self.dynamic.N, device=device)
+            times = torch.linspace(self.dynamic.T, eps, self.dynamic.N, device=device)
             for time in times:
                 t = torch.ones(batch_size, device=device) * time
                 noisy_x, _ = self.diff_eq_solver.step(noisy_x, t, labels)
@@ -279,5 +290,17 @@ class DiffusionRunner:
         with self.ema.average_parameters():
             images = self.sample_images(batch_size, labels=labels).cpu()
         images = images.type(torch.uint8)
+
+        return images
+
+    def inference_ddp(self, batch_size, labels=None) -> torch.Tensor:
+        self.model_ddp.eval()
+
+        with self.ema.average_parameters():
+            images = self.sample_images(batch_size, labels=labels).cpu()
+
+        images = images.type(torch.uint8)
+        from utils.utils import gather_images
+        images = gather_images(images)
 
         return images
