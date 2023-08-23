@@ -8,6 +8,8 @@ from skimage.io import imsave
 
 from time import gmtime, strftime
 
+from data.FFHQ_dataset import FFHQDataset
+
 
 def log_fid(fid_value, log_path, proj_name,
             total_images, time='unk'):
@@ -49,3 +51,24 @@ def cifar10_to_png(config, total_images=50000):
         for idx, (image_cifar, label) in enumerate(tqdm(real_dataset, total=total_images)):
             image = np.array(image_cifar)
             imsave(f"{path}/{idx:05d}.png", image)
+
+
+def ffhq_to_png(config, total_images=50000):
+    path = os.path.join(config.data.dataset_path, "samples")
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+        real_dataset = FFHQDataset(
+            root=os.path.join(config.data.dataset_path, "tmp"),
+        )
+        for idx, (image, label) in enumerate(tqdm(real_dataset, total=total_images)):
+            image = np.array(image)
+            imsave(f"{path}/{idx:05d}.png", image)
+            if idx >= total_images:
+                return
+
+
+def dataset_to_png(config, total_images):
+    if "cifar" in config.inference.checkpoints_prefix:
+        cifar10_to_png(config, total_images)
+    elif "ffhq" in config.inference.checkpoints_prefix:
+        ffhq_to_png(config, total_images)

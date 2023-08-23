@@ -30,7 +30,11 @@ class FFHQDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
-        return (self.transform(item["image"]), item["label"])
+        if self.transform is not None:
+            image = self.transform(item["image"])
+        else:
+            image = item["image"]
+        return (image, item["label"])
 
 
 class DataGenerator:

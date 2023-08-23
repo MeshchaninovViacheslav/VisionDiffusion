@@ -7,6 +7,7 @@ from diffusion import DiffusionRunner
 from utils.utils import set_seed
 from eval_utils.generation import generate_images
 from eval_utils.comput_fid import compute_fid
+from eval_utils.utils import dataset_to_png
 
 config = create_default_cifar_config()
 
@@ -39,9 +40,9 @@ generate_images(
     image_path=config.inference.image_path,
 )
 
+dataset_to_png(config, total_images=config.inference.total_images)
+
 compute_fid(
     dataset_path_real=f"{config.data.dataset_path}/samples",
     dataset_path_gen=config.inference.image_path
 )
-
-
