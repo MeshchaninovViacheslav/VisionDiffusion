@@ -1,7 +1,10 @@
 import ml_collections
 
 from models.model_config import create_big_model_config
+
 from data.CIFAR_config import cifar_config
+from data.LSUN_config import lsun_config
+
 from eval_utils.config import create_inference_config
 
 
@@ -9,7 +12,7 @@ def create_default_cifar_config():
     config = ml_collections.ConfigDict()
 
     # data
-    config.data = cifar_config()
+    config.data = lsun_config()
 
     # model
     config.model = create_big_model_config()
@@ -52,4 +55,5 @@ def create_default_cifar_config():
     config.experiment_name = config.inference.checkpoints_prefix
     config.parametrization = 'eps'
     config.seed = 0
+    config.validate = True
     return config

@@ -1,7 +1,7 @@
 import ml_collections
 
 
-def cifar_config():
+def lsun_config():
     data = ml_collections.ConfigDict()
 
     # data

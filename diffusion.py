@@ -11,7 +11,7 @@ import torch.distributed as dist
 
 from models.utils import create_model
 from diffusion_utils.ddpm_sde import create_sde, create_solver
-from data.CIFAR_dataset import DataGenerator
+from data.LSUN_dataset import DataGenerator
 from utils.utils import gather_images
 
 from ml_collections import ConfigDict
@@ -94,6 +94,9 @@ class DiffusionRunner:
         checkpoint_names = list(os.listdir(prefix_folder))
         checkpoint_names = [str(t).replace(".pth", "") for t in checkpoint_names]
         checkpoint_names = [int(t) for t in checkpoint_names if t.isdigit()]
+
+        if not checkpoint_names:
+            return False
 
         name = max(checkpoint_names)
         checkpoint_name = f"{prefix_folder}/{name}.pth"
@@ -218,6 +221,9 @@ class DiffusionRunner:
 
     @torch.no_grad()
     def validate(self) -> None:
+        if not self.config.validate:
+            return
+
         prev_mode = self.model.training
         self.model.eval()
 

@@ -12,6 +12,16 @@ from torch.utils.data import DataLoader
 import torch.distributed as dist
 
 
+"""
+Loading
+
+git clone https://github.com/fyu/lsun.git
+cd lsun
+python3 download.py -c bedroom
+unzip bedroom*
+
+"""
+
 class DataGenerator:
     def __init__(self, config):
         self.config = config
