@@ -30,6 +30,8 @@ class DiffusionRunner:
         self.parametrization = config.parametrization
 
         self.model = create_model(config=config)
+        self.config.total_number_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
         self.device = f"cuda:{dist.get_rank()}" if dist.is_initialized() else "cuda:0"
         self.model.to(self.device)
         self.model_without_ddp = self.model
@@ -53,7 +55,11 @@ class DiffusionRunner:
             self.train_gen = train_generator
             self.step = 0
             if dist.get_rank() == 0:
-                wandb.init(project=self.project_name, name=self.experiment_name)
+                wandb.init(
+                    project=self.project_name,
+                    name=self.experiment_name,
+                    config=dict(self.config),
+                )
 
             if self.load_checkpoint():
                 self.snapshot()
