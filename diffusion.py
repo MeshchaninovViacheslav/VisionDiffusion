@@ -40,19 +40,32 @@ class DiffusionRunner:
             ode_sampling=config.training.ode_sampling
         )
         self.inverse_scaler = lambda x: torch.clip(127.5 * (x + 1), 0, 255)
+        self.project_name = config.project_name
+        self.experiment_name = config.experiment_name
 
         if eval:
             self.restore_parameters()
             self.model.eval()
+        else:
+            self.set_optimizer()
+            self.set_data_generator()
+            train_generator = self.datagen.sample_train()
+            self.train_gen = train_generator
+            self.step = 0
+            if dist.get_rank() == 0:
+                wandb.init(project=self.project_name, name=self.experiment_name)
+
+            if self.load_checkpoint():
+                self.snapshot()
+                self.validate()
+
+
         if dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model,
                 device_ids=[config.local_rank],
                 broadcast_buffers=False,
             )
-
-        self.project_name = config.project_name
-        self.experiment_name = config.experiment_name
 
     def restore_parameters(self, device: Optional[torch.device] = None) -> None:
         load_path = os.path.join(
@@ -64,7 +77,31 @@ class DiffusionRunner:
             load_path,
             map_location='cpu'
         )
-        self.ema.load_state_dict(ema_ckpt)
+        self.ema.load_state_dict(ema_ckpt["ema"])
+
+    def load_checkpoint(self) -> int:
+        prefix_folder = os.path.join(self.config.inference.checkpoints_folder, self.config.inference.checkpoints_prefix)
+
+        if not os.path.exists(prefix_folder):
+            return False
+
+        checkpoint_names = list(os.listdir(prefix_folder))
+        checkpoint_names = [str(t).replace(".pth", "") for t in checkpoint_names]
+        checkpoint_names = [int(t) for t in checkpoint_names if t.isdigit()]
+
+        name = max(checkpoint_names)
+        checkpoint_name = f"{prefix_folder}/{name}.pth"
+
+        load = torch.load(checkpoint_name, map_location="cpu")
+
+        self.ema.load_state_dict(load["ema"])
+        self.model_without_ddp.load_state_dict(load["model"])
+        self.optimizer.load_state_dict(load["optimizer"])
+        self.scheduler.load_state_dict(load["scheduler"])
+        self.grad_scaler.load_state_dict(load["scaler"])
+        self.step = load["step"]
+        print(f"Checkpoint loaded {checkpoint_name}")
+        return True
 
     def save_checkpoint(self, last: bool = False) -> None:
         if not dist.get_rank() == 0:
@@ -78,9 +115,9 @@ class DiffusionRunner:
             os.makedirs(prefix_folder)
 
         if last:
-            prefix = 'last_'
+            prefix = 'last'
         else:
-            prefix = str(self.step) + '_'
+            prefix = str(self.step)
 
         save_path = os.path.join(prefix_folder, prefix + ".pth")
         torch.save(
@@ -201,20 +238,12 @@ class DiffusionRunner:
         self.model.train(prev_mode)
 
     def train(self) -> None:
-        self.set_optimizer()
-        self.set_data_generator()
-        train_generator = self.datagen.sample_train()
-        self.train_gen = train_generator
-        self.step = 0
-        if dist.get_rank() == 0:
-            wandb.init(project=self.project_name, name=self.experiment_name)
-
         self.model.train()
 
-        for iter_idx in trange(1, 1 + self.config.training.training_iters):
+        for iter_idx in trange(self.step + 1, self.config.training.training_iters + 1):
             self.step = iter_idx
 
-            (X, y) = next(train_generator)
+            (X, y) = next(self.train_gen)
             X = X.to(self.device)
 
             with torch.cuda.amp.autocast():
