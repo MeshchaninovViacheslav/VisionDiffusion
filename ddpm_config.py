@@ -13,7 +13,7 @@ def create_default_cifar_config():
     config = ml_collections.ConfigDict()
 
     # data
-    config.data = cifar_config()
+    config.data = ffhq_config()
 
     # model
     config.model = create_big_model_config()
@@ -48,7 +48,7 @@ def create_default_cifar_config():
     sde = config.sde = ml_collections.ConfigDict()
     sde.typename = 'vp-sde'
     sde.solver = 'euler'
-    sde.N = 1000
+    sde.N = 250
     sde.beta_min = 0.1
     sde.beta_max = 20
 

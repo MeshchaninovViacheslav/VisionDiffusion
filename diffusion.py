@@ -11,7 +11,7 @@ import torch.distributed as dist
 
 from models.utils import create_model
 from diffusion_utils.ddpm_sde import create_sde, create_solver
-from data.CIFAR_dataset import DataGenerator
+from data.FFHQ_dataset import DataGenerator
 from utils.utils import gather_images
 
 from ml_collections import ConfigDict
