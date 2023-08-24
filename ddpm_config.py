@@ -13,7 +13,7 @@ def create_default_cifar_config():
     config = ml_collections.ConfigDict()
 
     # data
-    config.data = ffhq_config()
+    config.data = cifar_config()
 
     # model
     config.model = create_big_model_config()

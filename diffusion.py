@@ -11,7 +11,7 @@ import torch.distributed as dist
 
 from models.utils import create_model
 from diffusion_utils.ddpm_sde import create_sde, create_solver
-from data.FFHQ_dataset import DataGenerator
+from data.CIFAR_dataset import DataGenerator
 from utils.utils import gather_images
 
 from ml_collections import ConfigDict
@@ -64,7 +64,6 @@ class DiffusionRunner:
             if self.load_checkpoint():
                 self.snapshot()
                 self.validate()
-
 
         if dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
@@ -201,12 +200,9 @@ class DiffusionRunner:
 
         scores = self.sde.calc_score(self.model, x_t, t)
 
-        if self.parametrization == 'eps':
-            eps_theta = scores.pop('eps_theta')
-            losses = torch.square((eps_theta - noise) / self.sde.div_std)
-        elif self.parametrization == 'x_0':
-            x_0 = scores.pop('x_0')
-            losses = torch.square((x_0 - clean_x) / self.sde.div_std)
+        eps_theta = scores.pop('eps_theta')
+        losses = torch.square((eps_theta - noise) / self.sde.div_std)
+
         losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=1)
         loss = torch.mean(losses)
         loss_dict = {
@@ -267,12 +263,15 @@ class DiffusionRunner:
 
             if iter_idx % self.config.training.snapshot_freq == 0:
                 self.snapshot()
+                self.model.train()
 
             if iter_idx % self.config.training.eval_freq == 0:
                 self.validate()
+                self.model.train()
 
             if iter_idx % self.config.training.checkpoint_freq == 0:
                 self.save_checkpoint()
+                self.model.train()
 
         self.model.eval()
         self.save_checkpoint(last=True)
@@ -292,6 +291,8 @@ class DiffusionRunner:
             self.config.data.image_size
         )
         device = f"cuda:{dist.get_rank()}" if dist.is_initialized() else "cuda:0"
+        self.model.eval()
+
         with torch.no_grad():
             x = x_mean = self.sde.prior_sampling(shape).to(device)
             timesteps = torch.linspace(self.sde.T, eps, self.sde.N, device=device)

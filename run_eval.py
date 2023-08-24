@@ -26,12 +26,10 @@ torch.distributed.barrier()
 
 config.training.batch_size_per_gpu = config.training.batch_size // dist.get_world_size()
 
-diffusion = DiffusionRunner(config)
+diffusion = DiffusionRunner(config, eval=True)
 
 seed = config.seed + dist.get_rank()
 set_seed(seed)
-
-diffusion.train()
 
 diffusion.model.eval()
 generate_images(

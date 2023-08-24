@@ -126,29 +126,21 @@ class DDPM_SDE:
         return RSDE()
 
     def calc_score(self, model, x_t, t) -> Dict[str, torch.Tensor]:
-        input_t = t * 999 # just technic for training, SDE looks the same
-        params = self.marginal_params_tensor(x_t, t)
-        alpha, std = params['alpha'], params['std']
-
-        if self.parametrization == 'eps':
-            eps_theta = model(x_t, input_t)
-            x_0 = None
-        elif self.parametrization == 'x_0':
-            x_0 = model(x_t, input_t)
-            eps_theta = (x_t - alpha * x_0) / std
+        input_t = t * 999  # just technic for training, SDE looks the same
+        eps_theta = model(x_t, input_t)
+        std = self.marginal_std(t)
 
         score = -eps_theta / std
 
         return {
             "score": score,
             "eps_theta": eps_theta,
-            "x_0": x_0
         }
 
 
 class EulerDiffEqSolver:
-    def __init__(self, sde: DDPM_SDE, ode_sampling = False):
-        self.sde: DDPM_SDE= sde
+    def __init__(self, sde: DDPM_SDE, ode_sampling=False):
+        self.sde: DDPM_SDE = sde
         self.ode_sampling: bool = ode_sampling
         self.rsde = sde.reverse(ode_sampling)
 
@@ -181,4 +173,3 @@ def create_solver(config, *solver_args, **solver_kwargs):
         "euler": EulerDiffEqSolver,
     }
     return possible_solver[config.sde.solver](*solver_args, **solver_kwargs)
-

@@ -14,7 +14,7 @@
 - [X] Add float16 training and scaler
 - [X] Leave one fid function
 - [X] Write generation function
-- New FID: 
+- New FID: 2.6468
 
 </details>
 
