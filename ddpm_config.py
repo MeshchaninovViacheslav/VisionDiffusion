@@ -45,16 +45,18 @@ def create_default_cifar_config():
     config.inference = create_inference_config()
 
     # sde
-    sde = config.sde = ml_collections.ConfigDict()
-    sde.typename = 'vp-sde'
-    sde.solver = 'euler'
-    sde.N = 250
-    sde.beta_min = 0.1
-    sde.beta_max = 20
+    dynamic = config.dynamic = ml_collections.ConfigDict()
+    dynamic.typename = 'vp-sde'
+    dynamic.solver = 'ddim'
+    dynamic.N = 250
+    dynamic.scheduler = "cosine"
+    dynamic.beta_min = 0.1
+    dynamic.beta_max = 20
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
     config.parametrization = 'eps'
     config.seed = 0
     config.validate = False
+
     return config

@@ -10,9 +10,10 @@ from timm.scheduler.cosine_lr import CosineLRScheduler
 import torch.distributed as dist
 
 from models.utils import create_model
-from diffusion_utils.ddpm_sde import create_sde, create_solver
 from data.FFHQ_dataset import DataGenerator
 from utils.utils import gather_images
+from diffusion_utils.dynamic import DynamicSDE
+from diffusion_utils.solvers import create_solver
 
 from ml_collections import ConfigDict
 from typing import Optional, Union, Dict
@@ -36,14 +37,16 @@ class DiffusionRunner:
         self.model.to(self.device)
         self.model_without_ddp = self.model
         self.ema = ExponentialMovingAverage(self.model.parameters(), config.model.ema_rate)
-        self.sde = create_sde(config=config)
-        self.diff_eq_solver = create_solver(
-            config, self.sde,
-            ode_sampling=config.training.ode_sampling
-        )
         self.inverse_scaler = lambda x: torch.clip(127.5 * (x + 1), 0, 255)
         self.project_name = config.project_name
         self.experiment_name = config.experiment_name
+
+        self.dynamic = DynamicSDE(config=config)
+        self.diff_eq_solver = create_solver(config)(
+            dynamic=self.dynamic,
+            score_fn=self.calc_score,
+            ode_sampling=config.training.ode_sampling
+        )
 
         if eval:
             self.restore_parameters()
@@ -189,19 +192,32 @@ class DiffusionRunner:
         self.datagen = DataGenerator(self.config)
 
     def sample_time(self, batch_size: int, eps: float = 1e-5):
-        return torch.rand(batch_size) * (self.sde.T - eps) + eps
+        return torch.rand(batch_size) * (self.dynamic.T - eps) + eps
+
+    def calc_score(self, x_t, t) -> Dict[str, torch.Tensor]:
+        input_t = t * 999  # just technic for training, SDE looks the same
+        eps_theta = self.model(x_t, input_t)
+        params = self.dynamic.marginal_params(t)
+        mu, std = params["mu"], params["std"]
+        score = -eps_theta / std
+        x_0 = (x_t - std * eps_theta) / mu
+
+        return {
+            "score": score,
+            "eps_theta": eps_theta,
+            "x_0": x_0,
+        }
 
     def calc_loss(self, clean_x: torch.Tensor, eps: float = 1e-5) -> Dict[str, torch.Tensor]:
         batch_size = clean_x.size(0)
         t = self.sample_time(batch_size, eps=eps).to(clean_x.device)
 
-        marg_forward = self.sde.marginal_forward(clean_x, t)
+        marg_forward = self.dynamic.marginal(clean_x, t)
         x_t, noise = marg_forward['x_t'], marg_forward['noise']
 
-        scores = self.sde.calc_score(self.model, x_t, t)
-
+        scores = self.calc_score(x_t, t)
         eps_theta = scores.pop('eps_theta')
-        losses = torch.square((eps_theta - noise) / self.sde.div_std)
+        losses = torch.square(eps_theta - noise)
 
         losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=1)
         loss = torch.mean(losses)
@@ -294,13 +310,13 @@ class DiffusionRunner:
         self.model.eval()
 
         with torch.no_grad():
-            x = x_mean = self.sde.prior_sampling(shape).to(device)
-            timesteps = torch.linspace(self.sde.T, eps, self.sde.N, device=device)
+            x = x_mean = self.dynamic.prior_sampling(shape=shape).to(device)
+            timesteps = torch.linspace(self.dynamic.T, eps, self.dynamic.N, device=device)
             rang = trange if verbose else range
-            for idx in rang(self.sde.N):
+            for idx in rang(self.dynamic.N):
                 t = timesteps[idx]
                 input_t = t * torch.ones(shape[0], device=device)
-                new_state = self.diff_eq_solver.step(self.model, x, input_t)
+                new_state = self.diff_eq_solver.step(x, input_t)
                 x, x_mean = new_state['x'], new_state['x_mean']
         return x_mean
 
