@@ -6,7 +6,7 @@ from ddpm_config import create_default_cifar_config
 from diffusion import DiffusionRunner
 from utils.utils import set_seed
 from eval_utils.generation import generate_images
-from eval_utils.comput_fid import compute_fid
+from eval_utils.compute_fid import compute_fid
 from eval_utils.utils import dataset_to_png
 
 config = create_default_cifar_config()
