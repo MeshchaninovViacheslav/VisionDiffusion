@@ -61,10 +61,10 @@ def ffhq_to_png(config, total_images=50000):
             root=os.path.join(config.data.dataset_path, "tmp"),
         )
         for idx, (image, label) in enumerate(tqdm(real_dataset, total=total_images)):
-            image = np.array(image)
-            imsave(f"{path}/{idx:05d}.png", image)
             if idx >= total_images:
                 return
+            image = np.array(image)
+            imsave(f"{path}/{idx:05d}.png", image)
 
 
 def dataset_to_png(config, total_images):
