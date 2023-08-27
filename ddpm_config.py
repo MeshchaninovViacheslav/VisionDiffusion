@@ -13,7 +13,7 @@ def create_default_cifar_config():
     config = ml_collections.ConfigDict()
 
     # data
-    config.data = ffhq_config()
+    config.data = cifar_config()
 
     # model
     config.model = create_big_model_config()
@@ -48,7 +48,7 @@ def create_default_cifar_config():
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
     dynamic.solver = 'ddim'
-    dynamic.N = 50
+    dynamic.N = 100
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
@@ -58,5 +58,6 @@ def create_default_cifar_config():
     config.parametrization = 'eps'
     config.seed = 0
     config.validate = False
+    config.timesteps = "quad"
 
     return config

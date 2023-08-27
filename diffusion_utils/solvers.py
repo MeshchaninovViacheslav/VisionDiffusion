@@ -17,7 +17,7 @@ class EulerDiffEqSolver:
         self.score_fn = score_fn
         self.ode_sampling = ode_sampling
 
-    def step(self, x_t, t, labels=None):
+    def step(self, x_t, t, next_t, labels=None):
         """
         Implement reverse SDE/ODE Euler solver
         """
@@ -26,7 +26,7 @@ class EulerDiffEqSolver:
         x_mean = deterministic part
         x = x_mean + noise (yet another noise sampling)
         """
-        dt = -(self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
+        dt = next_t - t
         noise = torch.randn_like(x_t)
         drift, diffusion = self.dynamic.reverse_params(x_t, t, self.score_fn, self.ode_sampling)
         x_mean = x_t + drift * dt
@@ -43,10 +43,7 @@ class DDIMSolver:
         self.score_fn = score_fn
         self.ode_sampling = ode_sampling
 
-    def q_x_t_reverse(self, x_t, x_0, t):
-        dt = (self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
-        next_t = torch.clip(t - dt, min=0, max=1)
-
+    def q_x_t_reverse(self, x_t, x_0, t, next_t):
         alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
         alpha_t_1 = torch.clip(self.dynamic.marginal_params(next_t)["mu"] ** 2, min=0, max=1)
 
@@ -58,7 +55,7 @@ class DDIMSolver:
         std = sigma_t
         return mu, std
 
-    def step(self, x_t, t, labels=None):
+    def step(self, x_t, t, next_t=None, labels=None):
         """
         Implement reverse SDE/ODE Euler solver
         """
@@ -69,7 +66,7 @@ class DDIMSolver:
         """
         noise = torch.randn_like(x_t)
         x_0 = self.score_fn(x_t, t)["x_0"]
-        mu, std = self.q_x_t_reverse(x_t, x_0, t)
+        mu, std = self.q_x_t_reverse(x_t, x_0, t, next_t)
         x = mu + std * noise
         return {
             "x": x,
@@ -88,10 +85,7 @@ class DDPMSolver:
         self.score_fn = score_fn
         self.ode_sampling = ode_sampling
 
-    def q_x_t_reverse(self, x_t, x_0, t):
-        dt = (self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
-        next_t = torch.clip(t - dt, min=0, max=1)
-
+    def q_x_t_reverse(self, x_t, x_0, t, next_t=None,):
         alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
         alpha_t_1 = torch.clip(self.dynamic.marginal_params(next_t)["mu"] ** 2, min=0, max=1)
         beta_t = 1 - alpha_t / alpha_t_1
@@ -101,7 +95,7 @@ class DDPMSolver:
         std = torch.sqrt((1 - alpha_t_1) / (1 - alpha_t) * beta_t)
         return mu, std
 
-    def step(self, x_t, t, labels=None):
+    def step(self, x_t, t, next_t=None, labels=None):
         """
         Implement reverse SDE/ODE Euler solver
         """
@@ -112,7 +106,7 @@ class DDPMSolver:
         """
         noise = torch.randn_like(x_t)
         x_0 = self.score_fn(x_t, t)["x_0"]
-        mu, std = self.q_x_t_reverse(x_t, x_0, t)
+        mu, std = self.q_x_t_reverse(x_t, x_0, t, next_t)
         x = mu + std * noise
         return {
             "x": x,
