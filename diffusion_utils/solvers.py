@@ -46,8 +46,8 @@ class DDIMSolver:
     def q_x_t_reverse(self, x_t, x_0, t):
         dt = 1 / self.dynamic.N
 
-        alpha_t = self.dynamic.marginal_params(t)["mu"] ** 2
-        alpha_t_1 = self.dynamic.marginal_params(t - dt)["mu"] ** 2
+        alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
+        alpha_t_1 = torch.clip(self.dynamic.marginal_params(t - dt)["mu"] ** 2, min=0, max=1)
 
         sigma_t = torch.zeros_like(alpha_t)
 
@@ -76,6 +76,11 @@ class DDIMSolver:
         }
 
 
+# def f_norm(x):
+#     shape = x.shape
+#     return torch.mean(torch.sum(x ** 2, dim=(1, 2, 3)) / (shape[1] * shape[2] * shape[3]))
+
+
 class DDPMSolver:
     def __init__(self, dynamic, score_fn, ode_sampling=False):
         self.dynamic = dynamic
@@ -84,8 +89,8 @@ class DDPMSolver:
 
     def q_x_t_reverse(self, x_t, x_0, t):
         dt = 1 / self.dynamic.N
-        alpha_t = self.dynamic.marginal_params(t)["mu"] ** 2
-        alpha_t_1 = self.dynamic.marginal_params(t - dt)["mu"] ** 2
+        alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
+        alpha_t_1 = torch.clip(self.dynamic.marginal_params(t - dt)["mu"] ** 2, min=0, max=1)
         beta_t = 1 - alpha_t / alpha_t_1
 
         mu = torch.sqrt(alpha_t_1) * beta_t / (1 - alpha_t) * x_0 + \

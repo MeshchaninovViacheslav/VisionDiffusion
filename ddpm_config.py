@@ -48,7 +48,7 @@ def create_default_cifar_config():
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
     dynamic.solver = 'ddim'
-    dynamic.N = 250
+    dynamic.N = 50
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20

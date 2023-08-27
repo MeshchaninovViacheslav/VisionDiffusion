@@ -1,5 +1,6 @@
 import ml_collections
 
+
 def create_inference_config():
     inference = ml_collections.ConfigDict()
 
@@ -9,6 +10,6 @@ def create_inference_config():
     inference.checkpoints_prefix = 'ddpm_ffhq'
     inference.checkpoints_name = "500000"
     inference.image_path = f"/home/vmeshchaninov/VisionDiffusion/generated_images/" \
-                           f"{inference.checkpoints_prefix}_250_ddim/{inference.checkpoints_name}/"
+                           f"{inference.checkpoints_prefix}_50_ddim/{inference.checkpoints_name}/"
 
     return inference
