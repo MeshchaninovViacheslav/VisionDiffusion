@@ -26,11 +26,11 @@ class EulerDiffEqSolver:
         x_mean = deterministic part
         x = x_mean + noise (yet another noise sampling)
         """
-        dt = next_t - t
+        dt = (next_t - t).view(-1, 1, 1, 1)
         noise = torch.randn_like(x_t)
         drift, diffusion = self.dynamic.reverse_params(x_t, t, self.score_fn, self.ode_sampling)
         x_mean = x_t + drift * dt
-        x = x_mean + diffusion.view(-1, 1, 1, 1) * np.sqrt(-dt) * noise
+        x = x_mean + diffusion.view(-1, 1, 1, 1) * torch.sqrt(-dt) * noise
         return {
             "x": x,
             "x_mean": x_mean
