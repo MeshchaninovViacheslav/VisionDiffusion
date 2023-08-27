@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from skimage.io import imsave
 from tqdm.auto import trange
+import torch.distributed as dist
 import sys
 
 sys.path.append("/home/vmeshchaninov/VisionDiffusion/")
@@ -35,7 +36,8 @@ def generate_images(diffusion, total_images, batch_size, image_path):
         images = images.permute(0, 2, 3, 1).data.numpy().astype(np.uint8)
 
         for i in range(len(images)):
-            imsave(os.path.join(image_path, f'{global_idx:05d}.png'), images[i])
+            if dist.get_rank() == 0:
+                imsave(os.path.join(image_path, f'{global_idx:05d}.png'), images[i])
             global_idx += 1
 
         if global_idx >= total_images:

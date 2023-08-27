@@ -37,7 +37,7 @@ class DiffusionRunner:
         self.model.to(self.device)
         self.model_without_ddp = self.model
         self.ema = ExponentialMovingAverage(self.model.parameters(), config.model.ema_rate)
-        self.inverse_scaler = lambda x: torch.clip(127.5 * (x + 1), 0, 255)
+        self.inverse_scaler = lambda x: torch.clamp((x + 1.) / 2., 0., 1.) * 255
         self.project_name = config.project_name
         self.experiment_name = config.experiment_name
 
@@ -311,7 +311,7 @@ class DiffusionRunner:
 
         with torch.no_grad():
             x = x_mean = self.dynamic.prior_sampling(shape=shape).to(device)
-            timesteps = torch.linspace(self.dynamic.T, eps, self.dynamic.N, device=device)
+            timesteps = torch.linspace(self.dynamic.T, self.dynamic.eps, self.dynamic.N, device=device)
             rang = trange if verbose else range
             for idx in rang(self.dynamic.N):
                 t = timesteps[idx]

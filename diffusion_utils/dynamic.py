@@ -27,6 +27,10 @@ class DynamicBase(metaclass=ABCMeta):
     def T(self):
         return 1
 
+    @property
+    def eps(self):
+        return 0.001
+
     @staticmethod
     def prior_sampling(shape) -> Tensor:
         return torch.randn(*shape)

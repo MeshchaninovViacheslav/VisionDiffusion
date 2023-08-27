@@ -26,7 +26,7 @@ class EulerDiffEqSolver:
         x_mean = deterministic part
         x = x_mean + noise (yet another noise sampling)
         """
-        dt = -1 / self.dynamic.N
+        dt = -(self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
         noise = torch.randn_like(x_t)
         drift, diffusion = self.dynamic.reverse_params(x_t, t, self.score_fn, self.ode_sampling)
         x_mean = x_t + drift * dt
@@ -44,10 +44,11 @@ class DDIMSolver:
         self.ode_sampling = ode_sampling
 
     def q_x_t_reverse(self, x_t, x_0, t):
-        dt = 1 / self.dynamic.N
+        dt = (self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
+        next_t = torch.clip(t - dt, min=0, max=1)
 
         alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
-        alpha_t_1 = torch.clip(self.dynamic.marginal_params(t - dt)["mu"] ** 2, min=0, max=1)
+        alpha_t_1 = torch.clip(self.dynamic.marginal_params(next_t)["mu"] ** 2, min=0, max=1)
 
         sigma_t = torch.zeros_like(alpha_t)
 
@@ -88,9 +89,11 @@ class DDPMSolver:
         self.ode_sampling = ode_sampling
 
     def q_x_t_reverse(self, x_t, x_0, t):
-        dt = 1 / self.dynamic.N
+        dt = (self.dynamic.T - self.dynamic.eps) / (self.dynamic.N - 1)
+        next_t = torch.clip(t - dt, min=0, max=1)
+
         alpha_t = torch.clip(self.dynamic.marginal_params(t)["mu"] ** 2, min=0, max=1)
-        alpha_t_1 = torch.clip(self.dynamic.marginal_params(t - dt)["mu"] ** 2, min=0, max=1)
+        alpha_t_1 = torch.clip(self.dynamic.marginal_params(next_t)["mu"] ** 2, min=0, max=1)
         beta_t = 1 - alpha_t / alpha_t_1
 
         mu = torch.sqrt(alpha_t_1) * beta_t / (1 - alpha_t) * x_0 + \
