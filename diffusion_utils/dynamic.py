@@ -61,7 +61,8 @@ class DynamicSDE(DynamicBase):
         """
         Calculate marginal q(x_t|x_0)'s mean and std
         """
-        mu, std = self.marginal_params(t)
+        params = self.marginal_params(t)
+        mu, std = params["mu"], params["std"]
         noise = torch.randn_like(x_0)
         x_t = x_0 * mu + noise * std
         return {
