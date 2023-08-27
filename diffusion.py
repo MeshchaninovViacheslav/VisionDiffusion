@@ -196,11 +196,16 @@ class DiffusionRunner:
 
     def calc_score(self, x_t, t) -> Dict[str, torch.Tensor]:
         input_t = t * 999  # just technic for training, SDE looks the same
-        eps_theta = self.model(x_t, input_t)
         params = self.dynamic.marginal_params(t)
         mu, std = params["mu"], params["std"]
-        score = -eps_theta / std
-        x_0 = (x_t - std * eps_theta) / mu
+        if self.config.parametrization == "eps":
+            eps_theta = self.model(x_t, input_t)
+            score = -eps_theta / std
+            x_0 = (x_t - std * eps_theta) / mu
+        elif self.config.parametrization == "x_0":
+            x_0 = self.model(x_t, input_t)
+            eps_theta = (x_t - mu * x_0) / std
+            score = -eps_theta / std
 
         return {
             "score": score,
@@ -216,8 +221,12 @@ class DiffusionRunner:
         x_t, noise = marg_forward['x_t'], marg_forward['noise']
 
         scores = self.calc_score(x_t, t)
-        eps_theta = scores.pop('eps_theta')
-        losses = torch.square(eps_theta - noise)
+        if self.config.parametrization == "eps":
+            eps_theta = scores.pop('eps_theta')
+            losses = torch.square(eps_theta - noise)
+        elif self.config.parametrization == "x_0":
+            x_0 = scores.pop('x_0')
+            losses = torch.square(x_0 - clean_x)
 
         losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=1)
         loss = torch.mean(losses)

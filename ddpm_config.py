@@ -13,7 +13,7 @@ def create_default_cifar_config():
     config = ml_collections.ConfigDict()
 
     # data
-    config.data = cifar_config()
+    config.data = ffhq_config()
 
     # model
     config.model = create_big_model_config()
@@ -22,8 +22,8 @@ def create_default_cifar_config():
     optim = config.optim = ml_collections.ConfigDict()
     optim.grad_clip_norm = 1.0
     optim.linear_warmup = 5000
-    optim.lr = 2e-4
-    optim.min_lr = 2e-4
+    optim.lr = 1e-4
+    optim.min_lr = 1e-4
     optim.warmup_lr = 0
     optim.weight_decay = 0
     optim.betas = (0.9, 0.999)
@@ -47,15 +47,15 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.solver = 'ddim'
-    dynamic.N = 100
+    dynamic.solver = 'euler'
+    dynamic.N = 250
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
-    config.parametrization = 'eps'
+    config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False
     config.timesteps = "quad"

@@ -1,5 +1,6 @@
 import ml_collections
 
+
 def create_big_model_config():
     model = ml_collections.ConfigDict()
     model.dropout = 0.1
@@ -10,9 +11,9 @@ def create_big_model_config():
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
     model.nf = 128
-    model.ch_mult = (1, 2, 2, 2)
-    model.num_res_blocks = 4
-    model.attn_resolutions = (16,)
+    model.ch_mult = (1, 2, 3, 4)
+    model.num_res_blocks = 1
+    model.attn_resolutions = (8, 16)
     model.resamp_with_conv = True
     model.conditional = True
     model.fir = False
