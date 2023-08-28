@@ -48,7 +48,6 @@ class DynamicSDE(DynamicBase):
 
         self.N = config.dynamic.N
         self.scheduler = get_scheduler(config)
-        self.parametrization = config.parametrization
 
     def marginal_params(self, t: Tensor) -> Dict[str, Tensor]:
         mu, std = self.scheduler.params(t)
@@ -82,5 +81,54 @@ class DynamicSDE(DynamicBase):
             diffusion = 0
         else:
             drift = drift_sde - beta_t[:, None, None, None] * score_fn(x_t, t)['score']
+            diffusion = diffuson_sde
+        return drift, diffusion
+
+
+class DynamicBoot(DynamicBase):
+    def __init__(self, config):
+        """Construct a Variance Preserving SDE.
+
+        Args:
+          beta_min: value of beta(0)
+          beta_max: value of beta(1)
+          N: number of discretization steps
+        """
+
+        self.step_size = config.dynamic.step_size
+        self.scheduler = get_scheduler(config)
+
+    def marginal_params(self, t: Tensor) -> Dict[str, Tensor]:
+        mu, std = self.scheduler.params(t)
+        return {
+            "mu": mu,
+            "std": std
+        }
+
+    def marginal(self, x_0: Tensor, t: Tensor) -> Dict[str, Tensor]:
+        """
+        Calculate marginal q(x_t|x_0)'s mean and std
+        """
+        params = self.marginal_params(t)
+        mu, std = params["mu"], params["std"]
+        noise = torch.randn_like(x_0)
+        x_t = x_0 * mu + noise * std
+        return {
+            "x_t": x_t,
+            "noise": noise,
+            "mu": mu,
+            "std": std,
+        }
+
+    def reverse_params(self, x_t, t, score_fn, ode_sampling=False):
+        beta_t = self.scheduler.beta_t(t)
+        drift_sde = (-1) / 2 * beta_t[:, None, None, None] * x_t
+        diffuson_sde = torch.sqrt(beta_t)
+
+        if ode_sampling:
+            drift = drift_sde - (1 / 2) * beta_t[:, None, None, None] * score_fn(x_t=x_t, t=t)['score']
+            diffusion = 0
+        else:
+            drift = drift_sde - beta_t[:, None, None, None] * score_fn(x_t=x_t, t=t)['score']
             diffusion = diffuson_sde
         return drift, diffusion

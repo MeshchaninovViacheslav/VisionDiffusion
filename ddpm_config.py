@@ -34,7 +34,7 @@ def create_default_cifar_config():
     training.training_iters = 500_000
     training.checkpoint_freq = 50_000
     training.eval_freq = 50_000
-    training.snapshot_freq = 50_000
+    training.snapshot_freq = 1_000
     training.snapshot_batch_size = 100
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size
@@ -48,10 +48,10 @@ def create_default_cifar_config():
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
     dynamic.solver = 'heun'
-    dynamic.N = 250
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
+    dynamic.step_size = 0.04
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
@@ -59,7 +59,10 @@ def create_default_cifar_config():
     config.seed = 0
     config.validate = False
     config.timesteps = "quad"
-    config.teacher_checkpoint_name = ""
-    config.init_checkpoint_name = ""
+    config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
+    config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
+    config.loss_bc_freq = 4
+    config.loss_bc_beta = 0.1
+    config.clip_target = True
 
     return config

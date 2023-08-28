@@ -8,11 +8,12 @@ from torch_ema import ExponentialMovingAverage
 from torch.cuda.amp import GradScaler
 from timm.scheduler.cosine_lr import CosineLRScheduler
 import torch.distributed as dist
+from functools import partial
 
 from models.utils import create_model
 from data.FFHQ_dataset import DataGenerator
 from utils.utils import gather_images
-from diffusion_utils.dynamic import DynamicSDE
+from diffusion_utils.dynamic import DynamicBoot
 from diffusion_utils.solvers import create_solver
 
 from ml_collections import ConfigDict
@@ -42,14 +43,16 @@ class DiffusionRunner:
         self.project_name = config.project_name
         self.experiment_name = config.experiment_name
 
-        self.dynamic = DynamicSDE(config=config)
-        self.diff_eq_solver = create_solver(config)(
-            dynamic=self.dynamic,
-            score_fn=self.calc_score,
-            ode_sampling=config.training.ode_sampling
-        )
         self.teacher_model = create_model(config=config)
         self.load_teacher_model()
+        self.teacher_model.cuda()
+
+        self.dynamic = DynamicBoot(config=config)
+        self.diff_eq_solver = create_solver(config)(
+            dynamic=self.dynamic,
+            score_fn=partial(self.calc_score, model=self.teacher_model),
+            ode_sampling=config.training.ode_sampling
+        )
 
         if eval:
             self.restore_parameters()
@@ -114,7 +117,8 @@ class DiffusionRunner:
         self.scheduler.load_state_dict(load["scheduler"])
         self.grad_scaler.load_state_dict(load["scaler"])
         self.step = load["step"]
-        print(f"Checkpoint loaded {checkpoint_name}")
+        if dist.get_rank() == 0:
+            print(f"Checkpoint loaded {checkpoint_name}")
         return True
 
     def load_teacher_model(self) -> None:
@@ -122,14 +126,16 @@ class DiffusionRunner:
         load = torch.load(self.config.teacher_checkpoint_name, map_location="cpu")
         teacher_ema.load_state_dict(load["ema"])
         teacher_ema.copy_to()
-        print(f"Teacher checkpoint loaded {self.config.teacher_checkpoint_name}")
+        if dist.get_rank() == 0:
+            print(f"Teacher checkpoint loaded {self.config.teacher_checkpoint_name}")
 
     def load_model_initialization(self) -> None:
         init_ema = ExponentialMovingAverage(self.model.parameters(), self.config.model.ema_rate)
         load = torch.load(self.config.init_checkpoint_name, map_location="cpu")
         init_ema.load_state_dict(load["ema"])
         init_ema.copy_to()
-        print(f"Initialization checkpoint loaded {self.config.init_checkpoint_name}")
+        if dist.get_rank() == 0:
+            print(f"Initialization checkpoint loaded {self.config.init_checkpoint_name}")
 
     def save_checkpoint(self, last: bool = False) -> None:
         if not dist.get_rank() == 0:
@@ -209,20 +215,16 @@ class DiffusionRunner:
         self.datagen = DataGenerator(self.config)
 
     def sample_time(self, batch_size: int, eps: float = 1e-5):
-        return torch.rand(batch_size) * (self.dynamic.T - eps) + eps
+        return torch.rand(batch_size) * (self.dynamic.T - self.dynamic.eps) + self.dynamic.eps
 
-    def calc_score(self, x_t, t) -> Dict[str, torch.Tensor]:
+    def calc_score(self, model, x_t, t) -> Dict[str, torch.Tensor]:
         input_t = t * 999  # just technic for training, SDE looks the same
         params = self.dynamic.marginal_params(t)
         mu, std = params["mu"], params["std"]
-        if self.config.parametrization == "eps":
-            eps_theta = self.model(x_t, input_t)
-            score = -eps_theta / std
-            x_0 = (x_t - std * eps_theta) / mu
-        elif self.config.parametrization == "x_0":
-            x_0 = self.model(x_t, input_t)
-            eps_theta = (x_t - mu * x_0) / std
-            score = -eps_theta / std
+
+        x_0 = model(x_t, input_t)
+        eps_theta = (x_t - mu * x_0) / std
+        score = -eps_theta / std
 
         return {
             "score": score,
@@ -232,18 +234,40 @@ class DiffusionRunner:
 
     def calc_loss(self, clean_x: torch.Tensor, eps: float = 1e-5) -> Dict[str, torch.Tensor]:
         batch_size = clean_x.size(0)
-        t = self.sample_time(batch_size, eps=eps).to(clean_x.device)
+        noise = torch.randn_like(clean_x)
+        time_t = self.sample_time(batch_size, eps=eps).to(clean_x.device)
+        time_s = torch.clip(time_t - self.dynamic.step_size, min=self.dynamic.eps)
+        time_t_max = torch.ones_like(time_t) * self.dynamic.T
+        time_t_min = torch.ones_like(time_t) * self.dynamic.eps
 
-        marg_forward = self.dynamic.marginal(clean_x, t)
-        x_t, noise = marg_forward['x_t'], marg_forward['noise']
+        marg_params_t = self.dynamic.marginal_params(time_t)
+        marg_params_s = self.dynamic.marginal_params(time_s)
 
-        scores = self.calc_score(x_t, t)
-        if self.config.parametrization == "eps":
-            eps_theta = scores.pop('eps_theta')
-            losses = torch.square(eps_theta - noise)
-        elif self.config.parametrization == "x_0":
-            x_0 = scores.pop('x_0')
-            losses = torch.square(x_0 - clean_x)
+        # weight_t = 1 - (marg_params_t["mu"] * marg_params_s["std"]) / (marg_params_s["mu"] * marg_params_t["std"])
+
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            y_t = self.model(noise, time_t).detach()
+            x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
+
+            f_s = self.diff_eq_solver.step(x_t=x_t, t=time_t, next_t=time_s)["x"].detach()
+            if self.config.clip_target:
+                f_s = torch.clip(f_s, min=-1, max=1)
+
+        # Model prediction
+        with torch.cuda.amp.autocast():
+            y_s = self.model(noise, time_s)
+
+        losses = torch.square(y_s - f_s)
+
+        if self.step % self.config.loss_bc_freq == 0:
+            with torch.cuda.amp.autocast():
+                y_t_max = self.model(noise, time_t_max)
+                with torch.no_grad():
+                    f_t_max = self.teacher_model(noise, time_t_max).detach()
+                    if self.config.clip_target:
+                        f_t_max = torch.clip(f_t_max, min=-1, max=1)
+
+            losses += torch.square(y_t_max - f_t_max) * self.config.loss_bc_beta
 
         losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=1)
         loss = torch.mean(losses)
@@ -296,8 +320,7 @@ class DiffusionRunner:
             (X, y) = next(self.train_gen)
             X = X.to(self.device)
 
-            with torch.cuda.amp.autocast():
-                loss_dict = self.calc_loss(clean_x=X)
+            loss_dict = self.calc_loss(clean_x=X)
             if iter_idx % self.config.training.log_freq == 0:
                 for k, v in loss_dict.items():
                     self.log_metric(k, 'train', v.item())
@@ -336,21 +359,11 @@ class DiffusionRunner:
         self.model.eval()
 
         with torch.no_grad():
-            x = x_mean = self.dynamic.prior_sampling(shape=shape).to(device)
-            if self.config.timesteps == "linear":
-                timesteps = torch.linspace(self.dynamic.T, self.dynamic.eps, self.dynamic.N, device=device)
-            elif self.config.timesteps == "quad":
-                timesteps = torch.linspace(self.dynamic.T - self.dynamic.eps, 0, self.dynamic.N,
-                                           device=device) ** 2 + self.dynamic.eps
-            rang = trange if verbose else range
-            for idx in rang(self.dynamic.N):
-                t = timesteps[idx]
-                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else torch.zeros_like(t)
-                input_t = t * torch.ones(shape[0], device=device)
-                next_input_t = next_t * torch.ones(shape[0], device=device)
-                new_state = self.diff_eq_solver.step(x, input_t, next_input_t)
-                x, x_mean = new_state['x'], new_state['x_mean']
-        return x_mean
+            noise = self.dynamic.prior_sampling(shape=shape).to(device)
+            input_t = self.dynamic.eps * torch.ones(shape[0], device=device)
+            x = self.model(noise, input_t)
+
+        return x
 
     @torch.no_grad()
     def sample_images(
