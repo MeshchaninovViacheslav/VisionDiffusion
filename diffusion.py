@@ -31,8 +31,9 @@ class DiffusionRunner:
         self.parametrization = config.parametrization
 
         self.model = create_model(config=config)
-        self.config.total_number_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.load_model_initialization()
 
+        self.config.total_number_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         self.device = f"cuda:{dist.get_rank()}" if dist.is_initialized() else "cuda:0"
         self.model.to(self.device)
         self.model_without_ddp = self.model
@@ -47,6 +48,8 @@ class DiffusionRunner:
             score_fn=self.calc_score,
             ode_sampling=config.training.ode_sampling
         )
+        self.teacher_model = create_model(config=config)
+        self.load_teacher_model()
 
         if eval:
             self.restore_parameters()
@@ -113,6 +116,20 @@ class DiffusionRunner:
         self.step = load["step"]
         print(f"Checkpoint loaded {checkpoint_name}")
         return True
+
+    def load_teacher_model(self) -> None:
+        teacher_ema = ExponentialMovingAverage(self.teacher_model.parameters(), self.config.model.ema_rate)
+        load = torch.load(self.config.teacher_checkpoint_name, map_location="cpu")
+        teacher_ema.load_state_dict(load["ema"])
+        teacher_ema.copy_to()
+        print(f"Teacher checkpoint loaded {self.config.teacher_checkpoint_name}")
+
+    def load_model_initialization(self) -> None:
+        init_ema = ExponentialMovingAverage(self.model.parameters(), self.config.model.ema_rate)
+        load = torch.load(self.config.init_checkpoint_name, map_location="cpu")
+        init_ema.load_state_dict(load["ema"])
+        init_ema.copy_to()
+        print(f"Initialization checkpoint loaded {self.config.init_checkpoint_name}")
 
     def save_checkpoint(self, last: bool = False) -> None:
         if not dist.get_rank() == 0:
