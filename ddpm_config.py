@@ -48,14 +48,14 @@ def create_default_cifar_config():
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
     dynamic.solver = 'heun'
-    dynamic.N = 10
+    dynamic.N = 250
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
-    config.parametrization = 'eps'
+    config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False
     config.timesteps = "quad"
