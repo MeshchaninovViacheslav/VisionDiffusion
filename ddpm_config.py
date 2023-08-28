@@ -38,7 +38,7 @@ def create_default_cifar_config():
     training.snapshot_batch_size = 100
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size
-    training.ode_sampling = False
+    training.ode_sampling = True
     training.log_freq = 10
 
     # inference
@@ -47,15 +47,15 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.solver = 'euler'
-    dynamic.N = 250
+    dynamic.solver = 'heun'
+    dynamic.N = 10
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
-    config.parametrization = 'x_0'
+    config.parametrization = 'eps'
     config.seed = 0
     config.validate = False
     config.timesteps = "quad"
