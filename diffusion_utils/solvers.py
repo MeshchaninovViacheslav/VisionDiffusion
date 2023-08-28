@@ -125,7 +125,7 @@ class DDIMSolver:
         x = x_mean + noise (yet another noise sampling)
         """
         noise = torch.randn_like(x_t)
-        x_0 = self.score_fn(x_t, t)["x_0"]
+        x_0 = self.score_fn(x_t=x_t, t=t)["x_0"]
         mu, std = self.q_x_t_reverse(x_t, x_0, t, next_t)
         x = mu + std * noise
         return {

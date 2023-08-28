@@ -17,7 +17,7 @@ from diffusion_utils.dynamic import DynamicBoot
 from diffusion_utils.solvers import create_solver
 
 from ml_collections import ConfigDict
-from typing import Optional, Union, Dict
+from typing import Optional, Union, Dict, Tuple
 from tqdm import trange
 
 
@@ -48,11 +48,6 @@ class DiffusionRunner:
         self.teacher_model.cuda()
 
         self.dynamic = DynamicBoot(config=config)
-        self.diff_eq_solver = create_solver(config)(
-            dynamic=self.dynamic,
-            score_fn=partial(self.calc_score, model=self.teacher_model),
-            ode_sampling=config.training.ode_sampling
-        )
 
         if eval:
             self.restore_parameters()
@@ -232,10 +227,27 @@ class DiffusionRunner:
             "x_0": x_0,
         }
 
-    def calc_loss(self, clean_x: torch.Tensor, eps: float = 1e-5) -> Dict[str, torch.Tensor]:
-        batch_size = clean_x.size(0)
-        noise = torch.randn_like(clean_x)
-        time_t = self.sample_time(batch_size, eps=eps).to(clean_x.device)
+    def get_stat(self, x: torch.Tensor) -> Dict[str, float]:
+        stat_dict = {}
+        stat_dict["mean"] = torch.mean(x).item()
+        stat_dict["std"] = torch.std(x).item()
+        dim = x.shape[1] * x.shape[2] * x.shape[3]
+        stat_dict["norm"] = torch.mean(
+            torch.sqrt(torch.sum(x ** 2, dim=(1, 2, 3)) / dim)
+        ).item()
+        return stat_dict
+
+    def calc_loss(self, clean_x: torch.Tensor = None, eps: float = 1e-5) -> Tuple[
+        Dict[str, torch.Tensor], Dict[str, Dict[str, float]]]:
+        batch_size = self.config.training.batch_size_per_gpu
+        shape = (
+            batch_size,
+            self.config.data.num_channels,
+            self.config.data.image_size,
+            self.config.data.image_size
+        )
+        noise = torch.randn(shape).cuda()
+        time_t = self.sample_time(batch_size, eps=eps).cuda()
         time_s = torch.clip(time_t - self.dynamic.step_size, min=self.dynamic.eps)
         time_t_max = torch.ones_like(time_t) * self.dynamic.T
         time_t_min = torch.ones_like(time_t) * self.dynamic.eps
@@ -243,39 +255,65 @@ class DiffusionRunner:
         marg_params_t = self.dynamic.marginal_params(time_t)
         marg_params_s = self.dynamic.marginal_params(time_s)
 
-        # weight_t = 1 - (marg_params_t["mu"] * marg_params_s["std"]) / (marg_params_s["mu"] * marg_params_t["std"])
+        lambda_der_t = 1 - (marg_params_t["mu"] * marg_params_s["std"]) / (marg_params_s["mu"] * marg_params_t["std"])
 
-        with torch.no_grad(), torch.cuda.amp.autocast():
+        # Target prediction
+        with torch.no_grad(), torch.cuda.amp.autocast(dtype=self.config.training.num_type):
             y_t = self.model(noise, time_t).detach()
-            x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
 
-            f_s = self.diff_eq_solver.step(x_t=x_t, t=time_t, next_t=time_s)["x"].detach()
+            if self.config.solver_type == "ddim":
+                x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
+                f_t = self.teacher_model(x_t, time_t)
+                y_target = y_t + lambda_der_t * (f_t - y_t)
+            elif self.config.solver_type == "heun":
+                x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
+                f_t = self.teacher_model(x_t, time_t)
+
+                y_s = y_t + lambda_der_t * (f_t - y_t)
+                x_s = marg_params_s["mu"] * y_s + marg_params_s["std"] * noise
+                f_s = self.teacher_model(x_s, time_s)
+
+                y_target = y_t + lambda_der_t / 2 * (f_t - y_t + f_s - y_s)
+
             if self.config.clip_target:
-                f_s = torch.clip(f_s, min=-1, max=1)
+                y_target = torch.clip(y_target, min=-1, max=1)
 
         # Model prediction
-        with torch.cuda.amp.autocast():
-            y_s = self.model(noise, time_s)
+        with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
+            y_pred = self.model(noise, time_s)
 
-        losses = torch.square(y_s - f_s)
+        loss_recon = torch.mean(torch.square(y_pred - y_target))  # / (self.dynamic.step_size ** 2)
+        loss_bc = torch.tensor([0.]).cuda()
+
+        stat_dict = {
+            "y_target": self.get_stat(y_target),
+            "y_pred": self.get_stat(y_pred),
+            "y_t": self.get_stat(y_t),
+        }
 
         if self.step % self.config.loss_bc_freq == 0:
-            with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
                 y_t_max = self.model(noise, time_t_max)
                 with torch.no_grad():
                     f_t_max = self.teacher_model(noise, time_t_max).detach()
                     if self.config.clip_target:
                         f_t_max = torch.clip(f_t_max, min=-1, max=1)
 
-            losses += torch.square(y_t_max - f_t_max) * self.config.loss_bc_beta
+            loss_bc = torch.mean(torch.square(y_t_max - f_t_max)) * self.config.loss_bc_beta
 
-        losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=1)
-        loss = torch.mean(losses)
+            stat_dict["f_t_max"] = self.get_stat(f_t_max)
+            stat_dict["y_t_max"] = self.get_stat(y_t_max)
+
+        loss = loss_recon + loss_bc
+
         loss_dict = {
             'loss': loss,
-            'total_loss': loss
+            'total_loss': loss,
+            "reconstruction loss": loss_recon,
+            "boundary condition": loss_bc,
         }
-        return loss_dict
+
+        return loss_dict, stat_dict
 
     def log_metric(self, metric_name: str, loader_name: str, value: Union[float, torch.Tensor, wandb.Image]):
         if dist.get_rank() == 0:
@@ -295,7 +333,7 @@ class DiffusionRunner:
             for (X, y) in self.datagen.valid_loader:
                 X = X.to(self.device)
 
-                loss_dict = self.calc_loss(clean_x=X)
+                loss_dict, _ = self.calc_loss(clean_x=X)
                 for k, v in loss_dict.items():
                     if k in valid_loss:
                         valid_loss[k] += v.item() * X.size(0)
@@ -317,13 +355,17 @@ class DiffusionRunner:
         for iter_idx in trange(self.step + 1, self.config.training.training_iters + 1):
             self.step = iter_idx
 
-            (X, y) = next(self.train_gen)
-            X = X.to(self.device)
+            # (X, y) = next(self.train_gen)
+            # X = X.to(self.device)
 
-            loss_dict = self.calc_loss(clean_x=X)
+            loss_dict, stat_dict = self.calc_loss()
             if iter_idx % self.config.training.log_freq == 0:
                 for k, v in loss_dict.items():
                     self.log_metric(k, 'train', v.item())
+                for key1 in stat_dict:
+                    for key2, v in stat_dict[key1].items():
+                        self.log_metric(key1, key2, v)
+
             self.optimizer_step(loss_dict['total_loss'])
 
             if iter_idx % self.config.training.snapshot_freq == 0:

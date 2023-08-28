@@ -1,3 +1,4 @@
+import torch
 import ml_collections
 
 from models.model_config import create_big_model_config
@@ -39,7 +40,8 @@ def create_default_cifar_config():
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size
     training.ode_sampling = True
-    training.log_freq = 10
+    training.log_freq = 1
+    training.num_type = torch.float16
 
     # inference
     config.inference = create_inference_config()
@@ -47,7 +49,6 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.solver = 'heun'
     dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
@@ -62,7 +63,8 @@ def create_default_cifar_config():
     config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.loss_bc_freq = 4
-    config.loss_bc_beta = 0.1
+    config.loss_bc_beta = 0.001
     config.clip_target = True
+    config.solver_type = "heun"
 
     return config
