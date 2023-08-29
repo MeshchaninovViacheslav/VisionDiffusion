@@ -33,7 +33,7 @@ def create_default_cifar_config():
     # training
     training = config.training = ml_collections.ConfigDict()
     training.training_iters = 500_000
-    training.checkpoint_freq = 50_000
+    training.checkpoint_freq = 25_000
     training.eval_freq = 50_000
     training.snapshot_freq = 1_000
     training.snapshot_batch_size = 100
@@ -41,7 +41,7 @@ def create_default_cifar_config():
     training.batch_size_per_gpu = training.batch_size
     training.ode_sampling = True
     training.log_freq = 1
-    training.num_type = torch.float16
+    training.num_type = torch.bfloat16
 
     # inference
     config.inference = create_inference_config()
@@ -53,6 +53,8 @@ def create_default_cifar_config():
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
+    dynamic.N = 1000
+    dynamic.solver = "heun"
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix

@@ -94,7 +94,7 @@ class DynamicBoot(DynamicBase):
           beta_max: value of beta(1)
           N: number of discretization steps
         """
-
+        self.N = config.dynamic.N
         self.step_size = config.dynamic.step_size
         self.scheduler = get_scheduler(config)
 
