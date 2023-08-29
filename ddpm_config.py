@@ -54,18 +54,18 @@ def create_default_cifar_config():
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
     dynamic.N = 1000
-    dynamic.solver = "heun"
+    dynamic.solver = "ddim"
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
     config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False
-    config.timesteps = "quad"
+    config.timesteps = "linear"
     config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.loss_bc_freq = 4
-    config.loss_bc_beta = 0.001
+    config.loss_bc_beta = 1
     config.clip_target = True
     config.solver_type = "heun"
 

@@ -66,10 +66,10 @@ class DiffusionRunner:
                 )
 
             self.dynamic.N = 1
-            self.snapshot_teacher(model=self.teacher_model, wandb_log_name="init_teacher_check_for_one_step")
+            self.snapshot_teacher(model=self.teacher_model,
+                                  wandb_log_name=f"init_teacher_check_for_{self.dynamic.N}_step")
             self.dynamic.N = 1000
             self.snapshot_teacher(model=self.teacher_model, wandb_log_name="init_teacher_check")
-
 
             if self.load_checkpoint():
                 self.snapshot_prediction()
@@ -243,6 +243,11 @@ class DiffusionRunner:
             "x_0": x_0,
         }
 
+    def model_predict(self, model, x_t, t) -> torch.Tensor:
+        input_t = t * 999
+        x_0 = model(x_t, input_t)
+        return x_0
+
     def get_stat(self, x: torch.Tensor) -> Dict[str, float]:
         stat_dict = {}
         stat_dict["mean"] = torch.mean(x).item()
@@ -275,19 +280,36 @@ class DiffusionRunner:
 
         # Target prediction
         with torch.no_grad(), torch.cuda.amp.autocast(dtype=self.config.training.num_type):
-            y_t = self.model(noise, time_t).detach()
+            y_t = self.model_predict(
+                model=self.model,
+                x_t=noise,
+                t=time_t
+            ).detach()
 
             if self.config.solver_type == "ddim":
                 x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
-                f_t = self.teacher_model(x_t, time_t)
+                f_t = self.model_predict(
+                    model=self.teacher_model,
+                    x_t=x_t,
+                    t=time_t
+                )
+
                 y_target = y_t + lambda_der_t * (f_t - y_t)
             elif self.config.solver_type == "heun":
                 x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
-                f_t = self.teacher_model(x_t, time_t)
+                f_t = self.model_predict(
+                    model=self.teacher_model,
+                    x_t=x_t,
+                    t=time_t
+                )
 
                 y_s = y_t + lambda_der_t * (f_t - y_t)
                 x_s = marg_params_s["mu"] * y_s + marg_params_s["std"] * noise
-                f_s = self.teacher_model(x_s, time_s)
+                f_s = self.model_predict(
+                    model=self.teacher_model,
+                    x_t=x_s,
+                    t=time_s
+                )
 
                 y_target = y_t + lambda_der_t / 2 * (f_t - y_t + f_s - y_s)
 
@@ -296,9 +318,13 @@ class DiffusionRunner:
 
         # Model prediction
         with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
-            y_pred = self.model(noise, time_s)
+            y_pred = self.model_predict(
+                model=self.model,
+                x_t=noise,
+                t=time_s
+            )
 
-        loss_recon = torch.mean(torch.square(y_pred - y_target))  # / (self.dynamic.step_size ** 2)
+        loss_recon = torch.mean(torch.square(y_pred - y_target)) / (self.dynamic.step_size ** 2)
         loss_bc = torch.tensor([0.]).cuda()
 
         stat_dict = {
@@ -309,9 +335,17 @@ class DiffusionRunner:
 
         if self.step % self.config.loss_bc_freq == 0:
             with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
-                y_t_max = self.model(noise, time_t_max)
+                y_t_max = self.model_predict(
+                    model=self.model,
+                    x_t=noise,
+                    t=time_t_max
+                )
                 with torch.no_grad():
-                    f_t_max = self.teacher_model(noise, time_t_max).detach()
+                    f_t_max = self.model_predict(
+                        model=self.teacher_model,
+                        x_t=noise,
+                        t=time_t_max
+                    ).detach()
                     if self.config.clip_target:
                         f_t_max = torch.clip(f_t_max, min=-1, max=1)
 
@@ -420,8 +454,12 @@ class DiffusionRunner:
         with torch.no_grad():
             noise = self.dynamic.prior_sampling(shape=shape).to(device)
             input_t = self.dynamic.eps * torch.ones(shape[0], device=device)
-            x = self.model(noise, input_t)
-
+            x = self.model_predict(
+                model=self.model,
+                x_t=noise,
+                t=input_t
+            )
+        self.model.train()
         return x
 
     @torch.no_grad()
@@ -473,12 +511,13 @@ class DiffusionRunner:
             if self.config.timesteps == "linear":
                 timesteps = torch.linspace(self.dynamic.T, self.dynamic.eps, self.dynamic.N, device=device)
             elif self.config.timesteps == "quad":
-                timesteps = torch.linspace(self.dynamic.T - self.dynamic.eps, 0, self.dynamic.N,
-                                           device=device) ** 2 + self.dynamic.eps
+                deg = 2
+                timesteps = torch.linspace(1, 0, self.dynamic.N, device=self.device) ** deg * (
+                        self.dynamic.T - self.dynamic.eps) + self.dynamic.eps
             rang = trange if verbose else range
             for idx in rang(self.dynamic.N):
                 t = timesteps[idx]
-                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else torch.zeros_like(t)
+                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else self.dynamic.eps
                 input_t = t * torch.ones(shape[0], device=device)
                 next_input_t = next_t * torch.ones(shape[0], device=device)
                 new_state = self.diff_eq_solver.step(x, input_t, next_input_t)
@@ -507,6 +546,13 @@ class DiffusionRunner:
 
         return self.inverse_scaler(x_mean)
 
+    def snapshot_teacher(self, model=None, wandb_log_name="teacher_images") -> None:
+        images = self.sample_images_teacher(self.config.training.snapshot_batch_size, model=model).cpu()
+        nrow = int(math.sqrt(self.config.training.snapshot_batch_size))
+        grid = torchvision.utils.make_grid(images, nrow=nrow).permute(1, 2, 0)
+        grid = grid.data.numpy().astype(np.uint8)
+        self.log_metric(wandb_log_name, 'generation', wandb.Image(grid))
+
     @torch.no_grad()
     def sample_prediction_images_teacher(
             self, batch_size: int,
@@ -534,9 +580,17 @@ class DiffusionRunner:
         input_t = t * torch.ones(batch_size, device=self.device)
         noise = self.dynamic.prior_sampling(shape=shape).to(device)
         marg_params_t = self.dynamic.marginal_params(input_t)
-        y_t = self.model(noise, input_t).detach()
+        y_t = self.model_predict(
+            model=self.model,
+            x_t=noise,
+            t=input_t
+        ).detach()
         x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
-        f_t = self.teacher_model(x_t, input_t)
+        f_t = self.model_predict(
+            model=self.teacher_model,
+            x_t=x_t,
+            t=input_t
+        )
 
         self.model.train()
 
@@ -544,13 +598,6 @@ class DiffusionRunner:
             x_mean = gather_images(f_t.cpu())
 
         return self.inverse_scaler(x_mean)
-
-    def snapshot_teacher(self, model=None, wandb_log_name="teacher_images") -> None:
-        images = self.sample_images_teacher(self.config.training.snapshot_batch_size, model=model).cpu()
-        nrow = int(math.sqrt(self.config.training.snapshot_batch_size))
-        grid = torchvision.utils.make_grid(images, nrow=nrow).permute(1, 2, 0)
-        grid = grid.data.numpy().astype(np.uint8)
-        self.log_metric(wandb_log_name, 'generation', wandb.Image(grid))
 
     def snapshot_prediction(self) -> None:
         timesteps = torch.linspace(self.dynamic.T, self.dynamic.eps, 10, device=self.device)
