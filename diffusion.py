@@ -96,6 +96,7 @@ class DiffusionRunner:
             map_location='cpu'
         )
         self.ema.load_state_dict(ema_ckpt["ema"])
+        print(f"Restored parameters from {load_path}")
 
     def load_checkpoint(self) -> int:
         prefix_folder = os.path.join(self.config.inference.checkpoints_folder, self.config.inference.checkpoints_prefix)

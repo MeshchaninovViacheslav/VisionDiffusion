@@ -7,7 +7,7 @@ def create_inference_config():
     inference.total_images = 50000
     inference.checkpoints_folder = '/home/vmeshchaninov/VisionDiffusion/checkpoints'
     inference.checkpoints_prefix = 'boots_ffhq_heun_v2'
-    inference.checkpoints_name = "last"
+    inference.checkpoints_name = "100000"
     inference.image_path = f"/home/vmeshchaninov/VisionDiffusion/generated_images/" \
                            f"{inference.checkpoints_prefix}/{inference.checkpoints_name}/"
 

@@ -21,7 +21,7 @@ def create_default_cifar_config():
 
     # optim
     optim = config.optim = ml_collections.ConfigDict()
-    optim.grad_clip_norm = 1.0
+    optim.grad_clip_norm = None
     optim.linear_warmup = 5000
     optim.lr = 1e-4
     optim.min_lr = 1e-4
