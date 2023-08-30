@@ -19,7 +19,7 @@ class Segment_Integrator(nn.Module):
 
     def forward(self, x_t, time_1, time_2):
         return self.sigma_skip(time_2 - time_1)[:, None, None, None] * x_t + \
-               self.sigma_out(time_2 - time_1)[:, None, None, None] * self.model(x_t, time_1, time_2)
+               self.sigma_out(time_2 - time_1)[:, None, None, None] * self.model(x_t, time_1 * 999, time_2 * 999)
 
 
 from models import utils, layers, layerspp, normalization
