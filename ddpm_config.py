@@ -21,7 +21,7 @@ def create_default_cifar_config():
 
     # optim
     optim = config.optim = ml_collections.ConfigDict()
-    optim.grad_clip_norm = None
+    optim.grad_clip_norm = 1
     optim.linear_warmup = 5000
     optim.lr = 1e-4
     optim.min_lr = 1e-4
@@ -33,13 +33,13 @@ def create_default_cifar_config():
     # training
     training = config.training = ml_collections.ConfigDict()
     training.training_iters = 500_000
-    training.checkpoint_freq = 25_000
+    training.checkpoint_freq = 50_000
     training.eval_freq = 50_000
-    training.snapshot_freq = 1_000
+    training.snapshot_freq = 50_000
     training.snapshot_batch_size = 100
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size
-    training.ode_sampling = True
+    training.ode_sampling = False
     training.log_freq = 1
     training.num_type = torch.bfloat16
 
@@ -53,8 +53,10 @@ def create_default_cifar_config():
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
-    dynamic.N = 1000
-    dynamic.solver = "ddim"
+    dynamic.N = 10
+    dynamic.solver = "heun"
+    dynamic.eps = 0.001
+    dynamic.T = 1.
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
@@ -68,5 +70,6 @@ def create_default_cifar_config():
     config.loss_bc_beta = 1
     config.clip_target = True
     config.solver_type = "heun"
+    config.trainer_type = "diffusion"
 
     return config

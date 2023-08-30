@@ -3,7 +3,7 @@ import torch
 import torch.distributed as dist
 
 from ddpm_config import create_default_cifar_config
-from diffusion import DiffusionRunner
+from integrator import IntegratorRunner
 from utils.utils import set_seed
 from eval_utils.generation import generate_images
 from eval_utils.compute_fid import compute_fid
@@ -26,7 +26,7 @@ torch.distributed.barrier()
 
 config.training.batch_size_per_gpu = config.training.batch_size // dist.get_world_size()
 
-diffusion = DiffusionRunner(config, eval=True)
+diffusion = IntegratorRunner(config, eval=True)
 
 seed = config.seed + dist.get_rank()
 set_seed(seed)

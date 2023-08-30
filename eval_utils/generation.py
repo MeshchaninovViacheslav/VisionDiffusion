@@ -9,13 +9,13 @@ import sys
 sys.path.append("/home/vmeshchaninov/VisionDiffusion/")
 
 from ddpm_config import create_default_cifar_config
-from diffusion import DiffusionRunner
+from integrator import IntegratorRunner
 
 
 def evaluate():
     config = create_default_cifar_config()
 
-    gen = DiffusionRunner(config, eval=True)
+    gen = IntegratorRunner(config, eval=True)
 
     total_images = config.inference.total_images
     batch_size = config.inference.batch_size

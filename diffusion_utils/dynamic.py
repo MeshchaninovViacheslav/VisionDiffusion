@@ -12,6 +12,9 @@ def get_scheduler(config):
 
 
 class DynamicBase(metaclass=ABCMeta):
+    def __init__(self, eps=0.001, T=1):
+        self.eps_ = eps
+        self.T_ = T
     @abstractmethod
     def marginal_params(self, t: Tensor) -> Tuple[Tensor, Tensor]:
         pass
@@ -25,11 +28,11 @@ class DynamicBase(metaclass=ABCMeta):
 
     @property
     def T(self):
-        return 1
+        return self.T_
 
     @property
     def eps(self):
-        return 0.001
+        return self.eps_
 
     @staticmethod
     def prior_sampling(shape) -> Tensor:
@@ -45,7 +48,7 @@ class DynamicSDE(DynamicBase):
           beta_max: value of beta(1)
           N: number of discretization steps
         """
-
+        super().__init__(config.dynamic.eps, config.dynamic.T)
         self.N = config.dynamic.N
         self.scheduler = get_scheduler(config)
 
@@ -94,6 +97,7 @@ class DynamicBoot(DynamicBase):
           beta_max: value of beta(1)
           N: number of discretization steps
         """
+        super().__init__(config.dynamic.eps, config.dynamic.T)
         self.N = config.dynamic.N
         self.step_size = config.dynamic.step_size
         self.scheduler = get_scheduler(config)
