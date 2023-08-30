@@ -20,7 +20,7 @@ import torch
 import numpy as np
 
 from models.ncsnpp import NCSNpp
-
+from models.segment_model import Segment_Integrator
 
 def get_sigmas(config):
   """Get sigmas --- the set of noise levels for SMLD from config files.
@@ -36,7 +36,8 @@ def get_sigmas(config):
 
 def create_model(config):
   name2cls = {
-    'ncsnpp': NCSNpp
+    'ncsnpp': NCSNpp,
+    'Segment_Integrator': Segment_Integrator,
   }
   model_name = config.model.name
   return name2cls[model_name](config)
