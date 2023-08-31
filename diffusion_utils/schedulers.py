@@ -33,6 +33,7 @@ class CosineIDDPM(Scheduler):
     def f(self, t):
         return torch.cos((t + self.s) / (1 + self.s) * np.pi / 2)
 
+    @property
     def f_0(self):
         return np.cos(self.s / (1 + self.s) * np.pi / 2)
 
@@ -40,3 +41,22 @@ class CosineIDDPM(Scheduler):
         mu = torch.clip(self.f(t)[:, None, None, None].to(t.device) / self.f_0, 0, 1)
         std = torch.sqrt(1. - mu ** 2)
         return mu, std
+
+
+class SD_sched(Scheduler):
+    def __init__(self, config):
+        self.d = 5
+        self.t_thr = 0.95
+
+    def beta_t(self, t):
+        t = torch.clip(t, 0, self.t_thr)
+        tan = torch.tan(np.pi * t / 2)
+        beta_t = np.pi * self.d ** 2 * tan * (1 + tan ** 2) / (1 + self.d ** 2 * tan ** 2)
+        return beta_t
+
+    def params(self, t):
+        t = t[:, None, None, None]
+        tan = torch.tan(np.pi * t / 2)
+        alpha_t = 1 / torch.sqrt(1 + tan ** 2 * self.d ** 2)
+        std_t = torch.sqrt(1 - alpha_t ** 2)
+        return torch.clip(alpha_t, 0, 1), torch.clip(std_t, 0, 1)

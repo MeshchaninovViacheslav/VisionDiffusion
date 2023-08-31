@@ -12,6 +12,9 @@ def get_scheduler(config):
     elif config.dynamic.scheduler == "cosine_iddpm":
         from diffusion_utils.schedulers import CosineIDDPM
         return CosineIDDPM(config)
+    elif config.dynamic.scheduler == "sd":
+        from diffusion_utils.schedulers import SD_sched
+        return SD_sched(config)
 
 
 class DynamicBase(metaclass=ABCMeta):
