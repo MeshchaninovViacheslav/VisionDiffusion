@@ -5,7 +5,7 @@ def create_big_model_config():
     model = ml_collections.ConfigDict()
     model.dropout = 0.1
     model.embedding_type = 'fourier'
-    model.name = 'Segment_Integrator'
+    model.name = 'ncsnpp'
     model.scale_by_sigma = False
     model.ema_rate = 0.9999
     model.normalization = 'GroupNorm'

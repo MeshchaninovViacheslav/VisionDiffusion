@@ -1,11 +1,9 @@
 import torch
+import numpy as np
 from abc import ABCMeta, abstractmethod
 
 
 class Scheduler(metaclass=ABCMeta):
-    @abstractmethod
-    def beta_t(self, t):
-        pass
 
     @abstractmethod
     def params(self, t):
@@ -26,3 +24,19 @@ class CosineSDE(Scheduler):
         alpha = torch.exp(log_mean_coeff)[:, None, None, None].to(t.device)
         std = torch.sqrt(1. - torch.exp(log_gamma_coeff))[:, None, None, None].to(t.device)
         return alpha, std
+
+
+class CosineIDDPM(Scheduler):
+    def __init__(self, config):
+        self.s = 0.008
+
+    def f(self, t):
+        return torch.cos((t + self.s) / (1 + self.s) * np.pi / 2)
+
+    def f_0(self):
+        return np.cos(self.s / (1 + self.s) * np.pi / 2)
+
+    def params(self, t):
+        mu = torch.clip(self.f(t)[:, None, None, None].to(t.device) / self.f_0, 0, 1)
+        std = torch.sqrt(1. - mu ** 2)
+        return mu, std

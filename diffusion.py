@@ -195,12 +195,12 @@ class DiffusionRunner:
         return torch.rand(batch_size) * (self.dynamic.T - eps) + eps
 
     def calc_score(self, x_t, t) -> Dict[str, torch.Tensor]:
-        #input_t = t * 999  # just technic for training, SDE looks the same
+        input_t = t * 999  # just technic for training, SDE looks the same
         params = self.dynamic.marginal_params(t)
         mu, std = params["mu"], params["std"]
         t_min = torch.ones_like(t) * self.dynamic.eps
 
-        x_0 = self.model(x_t, t, t_min)
+        x_0 = self.model(x_t, input_t)
         eps_theta = (x_t - mu * x_0) / std
         score = -eps_theta / std
 

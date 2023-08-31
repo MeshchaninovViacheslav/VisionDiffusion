@@ -49,11 +49,11 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.scheduler = "cosine"
+    dynamic.scheduler = "cosine_iddpm"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
-    dynamic.N = 10
+    dynamic.N = 250
     dynamic.solver = "heun"
     dynamic.eps = 0.001
     dynamic.T = 1.
@@ -63,7 +63,7 @@ def create_default_cifar_config():
     config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False
-    config.timesteps = "linear"
+    config.timesteps = "quad"
     config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.loss_bc_freq = 4

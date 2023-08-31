@@ -26,7 +26,15 @@ torch.distributed.barrier()
 
 config.training.batch_size_per_gpu = config.training.batch_size // dist.get_world_size()
 
-diffusion = IntegratorRunner(config, eval=True)
+if config.trainer_type == "diffusion":
+    from diffusion import DiffusionRunner
+
+    diffusion = DiffusionRunner(config)
+
+elif config.trainer_type == "integrator":
+    from integrator import IntegratorRunner
+
+    diffusion = IntegratorRunner(config)
 
 seed = config.seed + dist.get_rank()
 set_seed(seed)
