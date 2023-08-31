@@ -67,6 +67,6 @@ def create_default_cifar_config():
     config.loss_bc_freq = 4
     config.loss_bc_beta = 1
     config.clip_target = True
-    config.solver_type = "heun"
+    config.solver_type = "ddim"
 
     return config
