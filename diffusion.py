@@ -81,6 +81,7 @@ class DiffusionRunner:
             self.config.inference.checkpoints_prefix,
             self.config.inference.checkpoints_name + ".pth"
         )
+
         ema_ckpt = torch.load(
             load_path,
             map_location='cpu'
@@ -325,7 +326,7 @@ class DiffusionRunner:
             rang = trange if verbose else range
             for idx in rang(self.dynamic.N):
                 t = timesteps[idx]
-                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else torch.zeros_like(t)
+                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else torch.ones_like(t) * self.dynamic.eps
                 input_t = t * torch.ones(shape[0], device=device)
                 next_input_t = next_t * torch.ones(shape[0], device=device)
                 new_state = self.diff_eq_solver.step(x, input_t, next_input_t)

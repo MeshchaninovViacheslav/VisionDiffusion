@@ -32,8 +32,8 @@ def create_default_cifar_config():
 
     # training
     training = config.training = ml_collections.ConfigDict()
-    training.training_iters = 500_000
-    training.checkpoint_freq = 50_000
+    training.training_iters = 1_000_000
+    training.checkpoint_freq = 100_000
     training.eval_freq = 50_000
     training.snapshot_freq = 50_000
     training.snapshot_batch_size = 100
@@ -49,12 +49,12 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.scheduler = "sd"
+    dynamic.scheduler = "cosine_iddpm"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
     dynamic.N = 250
-    dynamic.solver = "heun"
+    dynamic.solver = "ddim"
     dynamic.eps = 0.001
     dynamic.T = 1.
 
@@ -69,7 +69,7 @@ def create_default_cifar_config():
     config.loss_bc_freq = 4
     config.loss_bc_beta = 1
     config.clip_target = True
-    config.solver_type = "heun"
+    config.solver_type = "ddim"
     config.trainer_type = "diffusion"
 
     return config
