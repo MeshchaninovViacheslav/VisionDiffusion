@@ -96,6 +96,7 @@ class DiffusionRunner:
             map_location='cpu'
         )
         self.ema.load_state_dict(ema_ckpt["ema"])
+        self.model_without_ddp.load_state_dict(ema_ckpt["model"])
         print(f"Restored parameters from {load_path}")
 
     def load_checkpoint(self) -> int:
@@ -229,14 +230,18 @@ class DiffusionRunner:
     def sample_time(self, batch_size: int, eps: float = 1e-5):
         return torch.rand(batch_size) * (self.dynamic.T - self.dynamic.eps) + self.dynamic.eps
 
-    def calc_score(self, model, x_t, t) -> Dict[str, torch.Tensor]:
+    def calc_score(self, model, x_t, t, param="x_0") -> Dict[str, torch.Tensor]:
         input_t = t * 999  # just technic for training, SDE looks the same
         params = self.dynamic.marginal_params(t)
         mu, std = params["mu"], params["std"]
-
-        x_0 = model(x_t, input_t)
-        eps_theta = (x_t - mu * x_0) / std
-        score = -eps_theta / std
+        if param == "x_0":
+            x_0 = model(x_t, input_t)
+            eps_theta = (x_t - mu * x_0) / std
+            score = -eps_theta / std
+        elif param == "eps":
+            eps_theta = model(x_t, input_t)
+            x_0 = (x_t - std * eps_theta) / mu
+            score = -eps_theta / std
 
         return {
             "score": score,
@@ -244,9 +249,15 @@ class DiffusionRunner:
             "x_0": x_0,
         }
 
-    def model_predict(self, model, x_t, t) -> torch.Tensor:
+    def model_predict(self, model, x_t, t, param="x_0") -> torch.Tensor:
         input_t = t * 999
-        x_0 = model(x_t, input_t)
+        if param == "x_0":
+            x_0 = model(x_t, input_t)
+        elif param == "eps":
+            eps = model(x_t, input_t)
+            params = self.dynamic.marginal_params(t)
+            mu, std = params["mu"], params["std"]
+            x_0 = (x_t - std * eps) / mu
         return x_0
 
     def get_stat(self, x: torch.Tensor) -> Dict[str, float]:
@@ -284,7 +295,8 @@ class DiffusionRunner:
             y_t = self.model_predict(
                 model=self.model,
                 x_t=noise,
-                t=time_t
+                t=time_t,
+                param="x_0"
             ).detach()
 
             if self.config.solver_type == "ddim":
@@ -292,7 +304,8 @@ class DiffusionRunner:
                 f_t = self.model_predict(
                     model=self.teacher_model,
                     x_t=x_t,
-                    t=time_t
+                    t=time_t,
+                    param="eps"
                 )
 
                 y_target = y_t + lambda_der_t * (f_t - y_t)
@@ -301,7 +314,8 @@ class DiffusionRunner:
                 f_t = self.model_predict(
                     model=self.teacher_model,
                     x_t=x_t,
-                    t=time_t
+                    t=time_t,
+                    param="eps"
                 )
 
                 y_s = y_t + lambda_der_t * (f_t - y_t)
@@ -309,7 +323,8 @@ class DiffusionRunner:
                 f_s = self.model_predict(
                     model=self.teacher_model,
                     x_t=x_s,
-                    t=time_s
+                    t=time_s,
+                    param="eps"
                 )
 
                 y_target = y_t + lambda_der_t / 2 * (f_t - y_t + f_s - y_s)
@@ -322,7 +337,8 @@ class DiffusionRunner:
             y_pred = self.model_predict(
                 model=self.model,
                 x_t=noise,
-                t=time_s
+                t=time_s,
+                param="x_0"
             )
 
         loss_recon = torch.mean(torch.square(y_pred - y_target)) / (self.dynamic.step_size ** 2)
@@ -339,13 +355,15 @@ class DiffusionRunner:
                 y_t_max = self.model_predict(
                     model=self.model,
                     x_t=noise,
-                    t=time_t_max
+                    t=time_t_max,
+                    param="x_0"
                 )
                 with torch.no_grad():
                     f_t_max = self.model_predict(
                         model=self.teacher_model,
                         x_t=noise,
-                        t=time_t_max
+                        t=time_t_max,
+                        param="eps"
                     ).detach()
                     if self.config.clip_target:
                         f_t_max = torch.clip(f_t_max, min=-1, max=1)
@@ -457,8 +475,10 @@ class DiffusionRunner:
         x = self.model_predict(
             model=self.model,
             x_t=noise,
-            t=input_t
+            t=input_t,
+            param="x_0"
         )
+        x = torch.clip(x, min=-1, max=1)
         self.model.train()
         return x
 
@@ -503,7 +523,7 @@ class DiffusionRunner:
             model = self.teacher_model
         self.diff_eq_solver = create_solver(self.config)(
             dynamic=self.dynamic,
-            score_fn=partial(self.calc_score, model=model),
+            score_fn=partial(self.calc_score, model=model, param="eps"),
             ode_sampling=self.config.training.ode_sampling
         )
 
@@ -584,13 +604,15 @@ class DiffusionRunner:
         y_t = self.model_predict(
             model=self.model,
             x_t=noise,
-            t=input_t
+            t=input_t,
+            param="x_0"
         ).detach()
         x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
         f_t = self.model_predict(
             model=self.teacher_model,
             x_t=x_t,
-            t=input_t
+            t=input_t,
+            param="eps"
         )
 
         self.model.train()
