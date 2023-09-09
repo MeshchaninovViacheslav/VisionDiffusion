@@ -25,6 +25,7 @@ torch.distributed.init_process_group(backend='nccl', init_method='env://', world
 torch.distributed.barrier()
 
 config.training.batch_size_per_gpu = config.training.batch_size // dist.get_world_size()
+config.project_name = "eval_integrators"
 
 diffusion = DiffusionRunner(config, eval=True)
 
