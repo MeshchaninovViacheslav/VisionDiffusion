@@ -452,14 +452,13 @@ class DiffusionRunner:
         device = f"cuda:{dist.get_rank()}" if dist.is_initialized() else "cuda:0"
         self.model.eval()
 
-        with torch.no_grad():
-            noise = self.dynamic.prior_sampling(shape=shape).to(device)
-            input_t = self.dynamic.eps * torch.ones(shape[0], device=device)
-            x = self.model_predict(
-                model=self.model,
-                x_t=noise,
-                t=input_t
-            )
+        noise = self.dynamic.prior_sampling(shape=shape).to(device)
+        input_t = self.dynamic.eps * torch.ones(shape[0], device=device)
+        x = self.model_predict(
+            model=self.model,
+            x_t=noise,
+            t=input_t
+        )
         self.model.train()
         return x
 
@@ -467,7 +466,8 @@ class DiffusionRunner:
     def sample_images(
             self, batch_size: int,
             eps: float = 1e-3,
-            verbose: bool = True
+            verbose: bool = True,
+            is_gather: bool = True,
     ) -> torch.Tensor:
         if dist.is_initialized():
             n_devices = dist.get_world_size()
@@ -480,10 +480,10 @@ class DiffusionRunner:
         with self.ema.average_parameters():
             x_mean = self.sample_tensor(batch_size, eps, verbose)
 
-        if dist.is_initialized():
+        if dist.is_initialized() and is_gather:
             x_mean = gather_images(x_mean.cpu())
 
-        return self.inverse_scaler(x_mean)
+        return self.inverse_scaler(x_mean.cpu())
 
     @torch.no_grad()
     def sample_tensor_teacher(

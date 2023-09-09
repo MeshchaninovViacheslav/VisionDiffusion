@@ -28,17 +28,18 @@ def generate_images(diffusion, total_images, batch_size, image_path):
 
     num_iters = total_images // batch_size + 1
 
-    global_idx = 0
+    global_num = 0
+    global_idx_per_gpu = 0
 
-    for idx in trange(num_iters):
-        tmp_batch_size = min(batch_size, total_images - global_idx)
-        images: torch.Tensor = diffusion.sample_images(batch_size=tmp_batch_size).cpu()
+    for _ in trange(num_iters):
+        tmp_batch_size = min(batch_size, total_images - global_num)
+        images: torch.Tensor = diffusion.sample_images(batch_size=tmp_batch_size, is_gather=False).cpu()
         images = images.permute(0, 2, 3, 1).data.numpy().astype(np.uint8)
 
         for i in range(len(images)):
-            if dist.get_rank() == 0:
-                imsave(os.path.join(image_path, f'{global_idx:05d}.png'), images[i])
-            global_idx += 1
+            imsave(os.path.join(image_path, f'{dist.get_rank()}_{global_idx_per_gpu:05d}.png'), images[i])
+            global_idx_per_gpu += 1
 
-        if global_idx >= total_images:
+        global_num += tmp_batch_size
+        if global_num >= total_images:
             break
