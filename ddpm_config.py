@@ -21,7 +21,7 @@ def create_default_cifar_config():
 
     # optim
     optim = config.optim = ml_collections.ConfigDict()
-    optim.grad_clip_norm = None
+    optim.grad_clip_norm = 1
     optim.linear_warmup = 5000
     optim.lr = 1e-4
     optim.min_lr = 1e-4
@@ -35,7 +35,7 @@ def create_default_cifar_config():
     training.training_iters = 500_000
     training.checkpoint_freq = 50_000
     training.eval_freq = 50_000
-    training.snapshot_freq = 10_000
+    training.snapshot_freq = 50_000
     training.snapshot_batch_size = 100
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size
@@ -49,7 +49,7 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.scheduler = "cosine"
+    dynamic.scheduler = "cosine_iddpm"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
@@ -60,12 +60,12 @@ def create_default_cifar_config():
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
-    config.parametrization = 'x_0'
+    config.parametrization = 'eps'
     config.seed = 0
     config.validate = False
-    config.timesteps = "linear"
-    config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_iddpm_x_0/last.pth"
-    config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_iddpm_x_0/last.pth"
+    config.timesteps = "quad"
+    config.teacher_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_v2/500000.pth"
+    config.init_checkpoint_name = "/home/vmeshchaninov/VisionDiffusion/checkpoints/ddpm_ffhq_x0/last.pth"
     config.loss_bc_freq = 4
     config.loss_bc_beta = 1
     config.clip_target = True
