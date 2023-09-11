@@ -87,7 +87,7 @@ class EdmSolver:
         drift, _ = self.dynamic.reverse_params(x_t, t, self.score_fn, self.ode_sampling)
         x_next = x_t + drift * dt
 
-        if next_t[0] > 10e-5: # TODO make vector processing
+        if next_t[0] > 10e-5:  # TODO make vector processing
             drift_next, _ = self.dynamic.reverse_params(x_next, next_t, self.score_fn, self.ode_sampling)
             x_next = x_t + dt / 2 * (drift + drift_next)
         x_mean = x_next
@@ -130,7 +130,8 @@ class DDIMSolver:
         x = mu + std * noise
         return {
             "x": x,
-            "x_mean": mu
+            "x_mean": mu,
+            "x_0": x_0
         }
 
 
