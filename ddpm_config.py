@@ -52,12 +52,14 @@ def create_default_cifar_config():
     dynamic.scheduler = "cosine_iddpm"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
+    dynamic.eps = 0.005
+    dynamic.T = 0.999
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
     config.parametrization = 'eps'
     config.seed = 0
     config.validate = False
-    config.timesteps = "linear"
+    config.timesteps = "quad"
 
     return config

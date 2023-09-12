@@ -327,14 +327,14 @@ class DiffusionRunner:
         with torch.no_grad():
             x = x_mean = self.dynamic.prior_sampling(shape=shape).to(device)
             if self.config.timesteps == "linear":
-                timesteps = torch.linspace(self.dynamic.T - self.dynamic.eps, self.dynamic.eps, self.dynamic.N, device=device)
+                timesteps = torch.linspace(self.dynamic.T, self.dynamic.eps, self.dynamic.N, device=device)
             elif self.config.timesteps == "quad":
                 timesteps = torch.linspace(self.dynamic.T - self.dynamic.eps, 0, self.dynamic.N,
                                            device=device) ** 2 + self.dynamic.eps
             rang = trange if verbose else range
             for idx in rang(self.dynamic.N):
                 t = timesteps[idx]
-                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else torch.zeros_like(t)
+                next_t = timesteps[idx + 1] if idx < self.dynamic.N - 1 else self.dynamic.eps
                 input_t = t * torch.ones(shape[0], device=device)
                 next_input_t = next_t * torch.ones(shape[0], device=device)
                 new_state = self.diff_eq_solver.step(x, input_t, next_input_t)
