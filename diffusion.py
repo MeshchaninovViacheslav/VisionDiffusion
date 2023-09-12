@@ -9,7 +9,13 @@ from torch.cuda.amp import GradScaler
 from timm.scheduler.cosine_lr import CosineLRScheduler
 import torch.distributed as dist
 
-from models.utils import create_model
+while True:
+    try:
+        from models.utils import create_model
+        break
+    except Exception:
+        print("Exception")
+
 from data.FFHQ_dataset import DataGenerator
 from utils.utils import gather_images
 from diffusion_utils.dynamic import DynamicSDE
