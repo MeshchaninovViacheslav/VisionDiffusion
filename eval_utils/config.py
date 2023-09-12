@@ -9,6 +9,6 @@ def create_inference_config():
     inference.checkpoints_prefix = "ddpm_ffhq_iddpm_x_0"
     inference.checkpoints_name = "last"
     inference.image_path = f"/home/vmeshchaninov/VisionDiffusion/generated_images/" \
-                           f"{inference.checkpoints_prefix}_heun/{inference.checkpoints_name}/"
+                           f"{inference.checkpoints_prefix}/{inference.checkpoints_name}/"
 
     return inference

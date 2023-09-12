@@ -52,12 +52,15 @@ def create_default_cifar_config():
     dynamic.scheduler = "cosine_iddpm"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
-    dynamic.eps = 0.005
-    dynamic.T = 0.999
+    dynamic.eps = 0.001
+    dynamic.T = 0.996
+    print(f"dynamic.eps = {dynamic.eps}")
+    print(f"dynamic.T = {dynamic.T}")
+    config.inference.image_path = f"/home/vmeshchaninov/VisionDiffusion/generated_images/dynamic.eps = {dynamic.eps}, dynamic.T = {dynamic.T}"
 
     config.project_name = 'integrators'
     config.experiment_name = config.inference.checkpoints_prefix
-    config.parametrization = 'eps'
+    config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False
     config.timesteps = "quad"
