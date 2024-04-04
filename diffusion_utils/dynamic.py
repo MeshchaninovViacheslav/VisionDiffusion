@@ -80,16 +80,16 @@ class DynamicSDE(DynamicBase):
             "std": std,
         }
 
-    def reverse_params(self, x_t, t, score_fn, ode_sampling=False):
+    def reverse_params(self, model, x_t, t, score_fn, ode_sampling=False):
         beta_t = self.scheduler.beta_t(t)
         drift_sde = (-1) / 2 * beta_t[:, None, None, None] * x_t
         diffuson_sde = torch.sqrt(beta_t)
 
         if ode_sampling:
-            drift = drift_sde - (1 / 2) * beta_t[:, None, None, None] * score_fn(x_t, t)['score']
+            drift = drift_sde - (1 / 2) * beta_t[:, None, None, None] * score_fn(model=model, x_t=x_t, t=t)['score']
             diffusion = 0
         else:
-            drift = drift_sde - beta_t[:, None, None, None] * score_fn(x_t, t)['score']
+            drift = drift_sde - beta_t[:, None, None, None] * score_fn(model, x_t, t)['score']
             diffusion = diffuson_sde
         return drift, diffusion
 

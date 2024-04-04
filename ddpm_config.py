@@ -49,7 +49,7 @@ def create_default_cifar_config():
     # sde
     dynamic = config.dynamic = ml_collections.ConfigDict()
     dynamic.typename = 'vp-sde'
-    dynamic.scheduler = "cosine_iddpm"
+    dynamic.scheduler = "cosine"
     dynamic.beta_min = 0.1
     dynamic.beta_max = 20
     dynamic.step_size = 0.04
@@ -58,8 +58,8 @@ def create_default_cifar_config():
     dynamic.T = 1.
     dynamic.eps = 0.001
 
-    config.project_name = 'integrators'
-    config.experiment_name = config.inference.checkpoints_prefix
+    config.project_name = 'test'
+    config.experiment_name = "image_cd-" + config.inference.checkpoints_prefix
     config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False

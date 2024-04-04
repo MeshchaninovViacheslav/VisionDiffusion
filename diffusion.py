@@ -14,7 +14,9 @@ from models.utils import create_model
 from data.FFHQ_dataset import DataGenerator
 from utils.utils import gather_images
 from diffusion_utils.dynamic import DynamicBoot
+from diffusion_utils.dynamic import DynamicSDE
 from diffusion_utils.solvers import create_solver
+from diffusion_utils.solvers import EulerDiffEqSolver
 
 from ml_collections import ConfigDict
 from typing import Optional, Union, Dict, Tuple
@@ -48,6 +50,11 @@ class DiffusionRunner:
         self.teacher_model.cuda().eval()
 
         self.dynamic = DynamicBoot(config=config)
+        self.teach_solver = EulerDiffEqSolver(
+            dynamic=DynamicSDE(config=config),
+            score_fn=self.calc_score,
+            ode_sampling=True
+        )
 
         if eval:
             self.restore_parameters()
@@ -288,14 +295,20 @@ class DiffusionRunner:
             ).detach()
 
             if self.config.solver_type == "ddim":
-                x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
-                f_t = self.model_predict(
+                x_t = marg_params_t["mu"] * clean_x + marg_params_t["std"] * noise
+                x_hat = self.teach_solver.step(
                     model=self.teacher_model,
                     x_t=x_t,
-                    t=time_t
+                    t=time_t,
+                    next_t=time_s
+                )["x_mean"].detach()
+
+                trg = self.model_predict(
+                    model=self.model,
+                    x_t=x_hat,
+                    t=time_s
                 )
 
-                y_target = y_t + lambda_der_t * (f_t - y_t)
             elif self.config.solver_type == "heun":
                 x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
                 f_t = self.model_predict(
@@ -314,22 +327,23 @@ class DiffusionRunner:
 
                 y_target = y_t + lambda_der_t / 2 * (f_t - y_t + f_s - y_s)
 
-            if self.config.clip_target:
-                y_target = torch.clip(y_target, min=-1, max=1)
+
+            # if self.config.clip_target:
+            #     y_target = torch.clip(y_target, min=-1, max=1)
 
         # Model prediction
         with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
             y_pred = self.model_predict(
                 model=self.model,
-                x_t=noise,
-                t=time_s
+                x_t=x_t,
+                t=time_t
             )
 
-        loss_recon = torch.mean(torch.square(y_pred - y_target)) / (self.dynamic.step_size ** 2)
+        loss_recon = torch.mean(torch.square(y_pred - trg)) # / (self.dynamic.step_size ** 2)
         loss_bc = torch.tensor([0.]).cuda()
 
         stat_dict = {
-            "y_target": self.get_stat(y_target),
+            "y_target": self.get_stat(trg),
             "y_pred": self.get_stat(y_pred),
             "y_t": self.get_stat(y_t),
         }
@@ -355,7 +369,7 @@ class DiffusionRunner:
             stat_dict["f_t_max"] = self.get_stat(f_t_max)
             stat_dict["y_t_max"] = self.get_stat(y_t_max)
 
-        loss = loss_recon + loss_bc
+        loss = loss_recon # + loss_bc
 
         loss_dict = {
             'loss': loss,
@@ -406,10 +420,10 @@ class DiffusionRunner:
         for iter_idx in trange(self.step + 1, self.config.training.training_iters + 1):
             self.step = iter_idx
 
-            # (X, y) = next(self.train_gen)
-            # X = X.to(self.device)
+            (X, y) = next(self.train_gen)
+            X = X.to(self.device)
 
-            loss_dict, stat_dict = self.calc_loss()
+            loss_dict, stat_dict = self.calc_loss(clean_x=X)
             if iter_idx % self.config.training.log_freq == 0:
                 for k, v in loss_dict.items():
                     self.log_metric(k, 'train', v.item())
@@ -453,7 +467,7 @@ class DiffusionRunner:
         self.model.eval()
 
         noise = self.dynamic.prior_sampling(shape=shape).to(device)
-        input_t = self.dynamic.eps * torch.ones(shape[0], device=device)
+        input_t = self.dynamic.T * torch.ones(shape[0], device=device)
         x = self.model_predict(
             model=self.model,
             x_t=noise,

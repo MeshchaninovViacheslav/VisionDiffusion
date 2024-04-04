@@ -19,7 +19,7 @@ class EulerDiffEqSolver:
         self.score_fn = score_fn
         self.ode_sampling = ode_sampling
 
-    def step(self, x_t, t, next_t, labels=None):
+    def step(self, model, x_t, t, next_t, labels=None):
         """
         Implement reverse SDE/ODE Euler solver
         """
@@ -30,9 +30,9 @@ class EulerDiffEqSolver:
         """
         dt = (next_t - t).view(-1, 1, 1, 1)
         noise = torch.randn_like(x_t)
-        drift, diffusion = self.dynamic.reverse_params(x_t, t, self.score_fn, self.ode_sampling)
+        drift, diffusion = self.dynamic.reverse_params(model, x_t, t, self.score_fn, self.ode_sampling)
         x_mean = x_t + drift * dt
-        x = x_mean + diffusion.view(-1, 1, 1, 1) * torch.sqrt(-dt) * noise
+        x = x_mean #+  diffusion.view(-1, 1, 1, 1) * torch.sqrt(-dt) * noise
         return {
             "x": x,
             "x_mean": x_mean
