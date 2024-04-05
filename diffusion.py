@@ -11,7 +11,7 @@ import torch.distributed as dist
 from functools import partial
 
 from models.utils import create_model
-from data.FFHQ_dataset import DataGenerator
+from data.CIFAR_dataset import DataGenerator
 from utils.utils import gather_images
 from diffusion_utils.dynamic import DynamicBoot
 from diffusion_utils.dynamic import DynamicSDE
@@ -83,7 +83,7 @@ class DiffusionRunner:
                 self.snapshot()
                 self.validate()
             else:
-                self.snapshot_teacher(model=self.model, wandb_log_name="init_model_check")
+                self.snapshot_teacher(model=self.teacher_model, wandb_log_name="init_model_check")
 
         if dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
@@ -236,6 +236,41 @@ class DiffusionRunner:
     def sample_time(self, batch_size: int, eps: float = 1e-5):
         return torch.rand(batch_size) * (self.dynamic.T - self.dynamic.eps) + self.dynamic.eps
 
+    def sample_consistency_time(self, 
+                          batch_size: int) -> Tuple[float, float]:
+        """Sampling timesteps from discrete grid.
+        
+        Args:
+            batch_size: self-explanatory
+        
+        Returns:
+            timesteps t > s
+        """
+        
+        rho = 7
+        num_scales = 18
+        sigma_min = 0.002
+        sigma_max = 80.
+
+        # In our configuration models didn't see t > T, so we need to scale it
+        scaling = sigma_max - sigma_min
+
+        indices = torch.randint(
+            0, num_scales - 1, (batch_size,), device=self.device
+        )
+
+        t = sigma_max ** (1 / rho) + indices / (num_scales - 1) * (
+            sigma_min ** (1 / rho) - sigma_max ** (1 / rho)
+        )
+        t = t**rho
+
+        s = sigma_max ** (1 / rho) + (indices + 1) / (num_scales - 1) * (
+            sigma_min ** (1 / rho) - sigma_max ** (1 / rho)
+        )
+        s = s**rho
+
+        return t / scaling, s / scaling
+
     def calc_score(self, model, x_t, t) -> Dict[str, torch.Tensor]:
         input_t = t * 999  # just technic for training, SDE looks the same
         params = self.dynamic.marginal_params(t)
@@ -278,6 +313,7 @@ class DiffusionRunner:
         noise = torch.randn(shape).cuda()
         time_t = self.sample_time(batch_size, eps=eps).cuda()
         time_s = torch.clip(time_t - self.dynamic.step_size, min=self.dynamic.eps)
+        time_t, time_s = self.sample_consistency_time(batch_size=batch_size)
         time_t_max = torch.ones_like(time_t) * self.dynamic.T
         time_t_min = torch.ones_like(time_t) * self.dynamic.eps
 
@@ -339,7 +375,7 @@ class DiffusionRunner:
                 t=time_t
             )
 
-        loss_recon = torch.mean(torch.square(y_pred - trg)) # / (self.dynamic.step_size ** 2)
+        loss_recon = torch.mean(torch.square(y_pred - trg)) / (self.dynamic.step_size ** 2)
         loss_bc = torch.tensor([0.]).cuda()
 
         stat_dict = {

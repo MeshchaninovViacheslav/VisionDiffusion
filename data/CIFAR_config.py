@@ -10,5 +10,5 @@ def cifar_config():
     data.centered = True
     data.norm_mean = (0.5)
     data.norm_std = (0.5)
-    data.dataset_path = '/home/vmeshchaninov/VisionDiffusion/datasets/CIFAR'
+    data.dataset_path = '/home/echimbulatov/data/CIFAR10'
     return data

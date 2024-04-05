@@ -15,7 +15,7 @@ import torch.distributed as dist
 class DataGenerator:
     def __init__(self, config):
         self.config = config
-        self.root_path = os.path.join(config.data.dataset_path, "tmp")
+        self.root_path = config.data.dataset_path # os.path.join(config.data.dataset_path, "tmp")
         self.train_cifar_transforms = Compose(
             [
                 # Resize((config.data.image_size, config.data.image_size)),
