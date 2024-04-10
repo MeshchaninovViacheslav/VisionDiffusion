@@ -36,7 +36,7 @@ def create_default_cifar_config():
     training.training_iters = 500_000
     training.checkpoint_freq = 50_000
     training.eval_freq = 50_000
-    training.snapshot_freq = 5_000
+    training.snapshot_freq = 1_000
     training.snapshot_batch_size = 25
     training.batch_size = 128
     training.batch_size_per_gpu = training.batch_size

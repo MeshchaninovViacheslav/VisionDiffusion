@@ -83,7 +83,7 @@ class DiffusionRunner:
                 self.snapshot()
                 self.validate()
             else:
-                self.snapshot_teacher(model=self.teacher_model, wandb_log_name="init_model_check")
+                self.snapshot_teacher(model=self.model, wandb_log_name="init_model_check")
 
         if dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
@@ -361,12 +361,6 @@ class DiffusionRunner:
                     t=time_s
                 )
 
-                y_target = y_t + lambda_der_t / 2 * (f_t - y_t + f_s - y_s)
-
-
-            # if self.config.clip_target:
-            #     y_target = torch.clip(y_target, min=-1, max=1)
-
         # Model prediction
         with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
             y_pred = self.model_predict(
@@ -379,33 +373,26 @@ class DiffusionRunner:
         loss_bc = torch.tensor([0.]).cuda()
 
         stat_dict = {
-            "y_target": self.get_stat(trg),
-            "y_pred": self.get_stat(y_pred),
+            "target": self.get_stat(trg),
+            "pred": self.get_stat(y_pred),
             "y_t": self.get_stat(y_t),
         }
 
-        if self.step % self.config.loss_bc_freq == 0:
-            with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
-                y_t_max = self.model_predict(
-                    model=self.model,
-                    x_t=noise,
-                    t=time_t_max
-                )
-                with torch.no_grad():
-                    f_t_max = self.model_predict(
-                        model=self.teacher_model,
-                        x_t=noise,
-                        t=time_t_max
-                    ).detach()
-                    if self.config.clip_target:
-                        f_t_max = torch.clip(f_t_max, min=-1, max=1)
+        # Boundary condition 
+        with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
+            marg_params_t_min = self.dynamic.marginal_params(time_t_min)                
+            x_t_min = marg_params_t_min["mu"] * clean_x + marg_params_t_min["std"] * noise
+            pred_bc = self.model_predict(
+                model=self.model,
+                x_t=x_t_min,
+                t=time_t_min
+            )
+        loss_bc = torch.mean(torch.square(pred_bc - x_t_min)) * self.config.loss_bc_beta
 
-            loss_bc = torch.mean(torch.square(y_t_max - f_t_max)) * self.config.loss_bc_beta
+        stat_dict["x_t_min"] = self.get_stat(x_t_min)
+        stat_dict["pred_bc"] = self.get_stat(pred_bc)
 
-            stat_dict["f_t_max"] = self.get_stat(f_t_max)
-            stat_dict["y_t_max"] = self.get_stat(y_t_max)
-
-        loss = loss_recon # + loss_bc
+        loss = loss_recon + loss_bc
 
         loss_dict = {
             'loss': loss,
