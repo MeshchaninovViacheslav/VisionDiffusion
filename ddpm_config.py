@@ -60,7 +60,7 @@ def create_default_cifar_config():
     dynamic.eps = 0.001
 
     config.project_name = 'test'
-    config.experiment_name = "image_cd-" + config.inference.checkpoints_prefix
+    config.experiment_name = "cont_time_cd_correct_time_sampling-" + config.inference.checkpoints_prefix
     config.parametrization = 'x_0'
     config.seed = 0
     config.validate = False

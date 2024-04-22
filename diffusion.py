@@ -78,12 +78,12 @@ class DiffusionRunner:
             self.dynamic.N = 1000
             self.snapshot_teacher(model=self.teacher_model, wandb_log_name="init_teacher_check")
 
-            if self.load_checkpoint():
-                self.snapshot_prediction()
-                self.snapshot()
-                self.validate()
-            else:
-                self.snapshot_teacher(model=self.model, wandb_log_name="init_model_check")
+            # if self.load_checkpoint():
+            #     self.snapshot_prediction()
+            #     self.snapshot()
+            #     self.validate()
+            # else:
+            self.snapshot_teacher(model=self.model, wandb_log_name="init_model_check")
 
         if dist.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
@@ -234,14 +234,14 @@ class DiffusionRunner:
         self.datagen = DataGenerator(self.config)
 
     def sample_time(self, batch_size: int, eps: float = 1e-5):
-        return torch.rand(batch_size) * (self.dynamic.T - self.dynamic.eps) + self.dynamic.eps
+        return torch.rand(batch_size) * (self.dynamic.T - self.dynamic.eps - self.dynamic.step_size) + self.dynamic.eps + self.dynamic.step_size
 
     def sample_consistency_time(self, 
                           batch_size: int) -> Tuple[float, float]:
-        """Sampling timesteps from discrete grid.
+        """Sampling timesteps from discrete grid
         
         Args:
-            batch_size: self-explanatory
+            batch_size: self-explainatory
         
         Returns:
             timesteps t > s
@@ -249,11 +249,8 @@ class DiffusionRunner:
         
         rho = 7
         num_scales = 18
-        sigma_min = 0.002
-        sigma_max = 80.
-
-        # In our configuration models didn't see t > T, so we need to scale it
-        scaling = sigma_max - sigma_min
+        sigma_min = 0.001
+        sigma_max = 1.
 
         indices = torch.randint(
             0, num_scales - 1, (batch_size,), device=self.device
@@ -269,7 +266,7 @@ class DiffusionRunner:
         )
         s = s**rho
 
-        return t / scaling, s / scaling
+        return t, s
 
     def calc_score(self, model, x_t, t) -> Dict[str, torch.Tensor]:
         input_t = t * 999  # just technic for training, SDE looks the same
@@ -313,22 +310,20 @@ class DiffusionRunner:
         noise = torch.randn(shape).cuda()
         time_t = self.sample_time(batch_size, eps=eps).cuda()
         time_s = torch.clip(time_t - self.dynamic.step_size, min=self.dynamic.eps)
-        time_t, time_s = self.sample_consistency_time(batch_size=batch_size)
-        time_t_max = torch.ones_like(time_t) * self.dynamic.T
+        # time_t, time_s = self.sample_consistency_time(batch_size=batch_size)
+        # time_t, time_s = time_t.cuda(), time_s.cuda()
         time_t_min = torch.ones_like(time_t) * self.dynamic.eps
 
         marg_params_t = self.dynamic.marginal_params(time_t)
         marg_params_s = self.dynamic.marginal_params(time_s)
 
-        lambda_der_t = 1 - (marg_params_t["mu"] * marg_params_s["std"]) / (marg_params_s["mu"] * marg_params_t["std"])
-
         # Target prediction
         with torch.no_grad(), torch.cuda.amp.autocast(dtype=self.config.training.num_type):
-            y_t = self.model_predict(
-                model=self.model,
-                x_t=noise,
-                t=time_t
-            ).detach()
+            # y_t = self.model_predict(
+            #     model=self.model,
+            #     x_t=noise,
+            #     t=time_t
+            # ).detach()
 
             if self.config.solver_type == "ddim":
                 x_t = marg_params_t["mu"] * clean_x + marg_params_t["std"] * noise
@@ -345,21 +340,22 @@ class DiffusionRunner:
                     t=time_s
                 )
 
-            elif self.config.solver_type == "heun":
-                x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
-                f_t = self.model_predict(
-                    model=self.teacher_model,
-                    x_t=x_t,
-                    t=time_t
-                )
+            # elif self.config.solver_type == "heun":
+            #     # TODO: redo heun solver for Consistency setup
+            #     x_t = marg_params_t["mu"] * y_t + marg_params_t["std"] * noise
+            #     f_t = self.model_predict(
+            #         model=self.teacher_model,
+            #         x_t=x_t,
+            #         t=time_t
+            #     )
 
-                y_s = y_t + lambda_der_t * (f_t - y_t)
-                x_s = marg_params_s["mu"] * y_s + marg_params_s["std"] * noise
-                f_s = self.model_predict(
-                    model=self.teacher_model,
-                    x_t=x_s,
-                    t=time_s
-                )
+            #     y_s = y_t + time_s * (f_t - y_t)
+            #     x_s = marg_params_s["mu"] * y_s + marg_params_s["std"] * noise
+            #     f_s = self.model_predict(
+            #         model=self.teacher_model,
+            #         x_t=x_s,
+            #         t=time_s
+            #     )
 
         # Model prediction
         with torch.cuda.amp.autocast(dtype=self.config.training.num_type):
@@ -375,7 +371,6 @@ class DiffusionRunner:
         stat_dict = {
             "target": self.get_stat(trg),
             "pred": self.get_stat(y_pred),
-            "y_t": self.get_stat(y_t),
         }
 
         # Boundary condition 
